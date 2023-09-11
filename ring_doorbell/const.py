@@ -47,6 +47,7 @@ URL_DOORBELL_HISTORY = DOORBELLS_ENDPOINT + "/history"
 URL_RECORDING = "/clients_api/dings/{0}/recording"
 URL_RECORDING_SHARE_PLAY = "/clients_api/dings/{0}/share/play"
 GROUP_DEVICES_ENDPOINT = GROUPS_ENDPOINT + "/{1}/devices"
+DO_NOT_DISTURB_CHIME_ENDPOINT = CHIMES_ENDPOINT + "/do_not_disturb"
 
 # chime test sound kinds
 KIND_DING = "ding"

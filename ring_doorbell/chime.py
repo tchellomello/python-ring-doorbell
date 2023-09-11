@@ -16,6 +16,7 @@ from ring_doorbell.const import (
     CHIME_KINDS,
     CHIME_PRO_KINDS,
     HEALTH_CHIMES_ENDPOINT,
+    DO_NOT_DISTURB_CHIME_ENDPOINT
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,4 +85,9 @@ class RingChime(RingGeneric):
             return False
         url = TESTSOUND_CHIME_ENDPOINT.format(self.id)
         self._ring.query(url, method="POST", extra_params={"kind": kind})
+        return True
+
+    def set_do_not_disturb(self, minutes: int = 180):
+        url = DO_NOT_DISTURB_CHIME_ENDPOINT.format(self.id)
+        self._ring.query(url, method="POST", extra_params={"time": minutes})
         return True

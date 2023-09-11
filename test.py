@@ -20,11 +20,11 @@ def otp_callback():
 
 def main():
     if cache_file.is_file():
-        auth = Auth("MyProject/1.0", json.loads(cache_file.read_text()), token_updated)
+        auth = Auth("RingAPI2023/1.0", json.loads(cache_file.read_text()), token_updated)
     else:
         username = input("Username: ")
         password = getpass.getpass("Password: ")
-        auth = Auth("MyProject/1.0", None, token_updated)
+        auth = Auth("RingAPI2023/1.0", None, token_updated)
         try:
             auth.fetch_token(username, password)
         except MissingTokenError:
