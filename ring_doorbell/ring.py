@@ -39,7 +39,7 @@ TYPES = {
 class Ring:
     """A Python Abstraction object to Ring Door Bell."""
 
-    def __init__(self, auth: Auth):
+    def __init__(self, auth: Auth, *, debug_log_queries=False):
         """Initialize the Ring object."""
         self.auth: Auth = auth
         self.session = None
@@ -51,6 +51,7 @@ class Ring:
         self.push_dings_data = []
         self.groups_data = None
         self.init_loop = None
+        self.debug_log_queries = debug_log_queries
 
     def update_data(self):
         """Update all data."""
@@ -134,33 +135,49 @@ class Ring:
                     self.groups_data[group["device_group_id"]] = group
 
     def query(
-        self, url, method="GET", extra_params=None, data=None, json=None, timeout=None
+        self,
+        url,
+        method="GET",
+        extra_params=None,
+        data=None,
+        json=None,
+        timeout=None,
+        base_uri=API_URI,
     ):
         """Query data from Ring API."""
         if self.session is None:
             self.create_session()
-        return self._query(url, method, extra_params, data, json, timeout)
+        return self._query(url, method, extra_params, data, json, timeout, base_uri)
 
     def _query(
-        self, url, method="GET", extra_params=None, data=None, json=None, timeout=None
+        self,
+        url,
+        method="GET",
+        extra_params=None,
+        data=None,
+        json=None,
+        timeout=None,
+        base_uri=API_URI,
     ):
-        _logger.debug(
-            "url: %s\nmethod: %s\njson: %s\ndata: %s\n extra_params: %s",
-            url,
-            method,
-            json,
-            data,
-            extra_params,
-        )
+        if self.debug_log_queries:
+            _logger.debug(
+                "url: %s\nmethod: %s\njson: %s\ndata: %s\n extra_params: %s",
+                url,
+                method,
+                json,
+                data,
+                extra_params,
+            )
         response = self.auth.query(
-            API_URI + url,
+            base_uri + url,
             method=method,
             extra_params=extra_params,
             data=data,
             json=json,
             timeout=timeout,
         )
-        _logger.debug("response_text %s", response.text)
+        if self.debug_log_queries:
+            _logger.debug("response_text %s", response.text)
         return response
 
     def devices(self):

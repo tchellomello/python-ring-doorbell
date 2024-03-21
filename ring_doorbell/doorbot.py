@@ -23,6 +23,7 @@ from ring_doorbell.const import (
     DOORBELLS_ENDPOINT,
     FILE_EXISTS,
     HEALTH_DOORBELL_ENDPOINT,
+    ICE_SERVERS,
     LIVE_STREAMING_ENDPOINT,
     MSG_ALLOWED_VALUES,
     MSG_BOOLEAN_REQUIRED,
@@ -38,6 +39,7 @@ from ring_doorbell.const import (
 )
 from ring_doorbell.exceptions import RingError
 from ring_doorbell.generic import RingGeneric
+from ring_doorbell.rtcstream import RingWebRtcStream
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +50,9 @@ class RingDoorBell(RingGeneric):
     def __init__(self, ring, device_api_id, shared=False):
         super().__init__(ring, device_api_id)
         self.shared = shared
+        self.session_id = None
+        self.dialog_id = None
+        self._rtc_stream = None
 
     @property
     def family(self):
@@ -267,11 +272,14 @@ class RingDoorBell(RingGeneric):
     def live_streaming_json(self):
         """Return JSON for live streaming."""
         url = LIVE_STREAMING_ENDPOINT.format(self.device_api_id)
-        req = self._ring.query(url, method="POST")
+
+        req = self._ring.query(url, method="POST", base_uri="https://app.ring.com")
         if req and req.status_code == 200:
             url = DINGS_ENDPOINT
             try:
-                return self._ring.query(url).json()[0]
+                resp = self._ring.query(url).json()
+                print(resp)
+                return resp[0]
             except (IndexError, TypeError):
                 pass
         return None
@@ -429,3 +437,16 @@ class RingDoorBell(RingGeneric):
         self._ring.query(url, method="PATCH", json=payload)
         self._ring.update_devices()
         return True
+
+    async def generate_rtc_stream(self, sdp_offer):
+        self._rtc_stream = RingWebRtcStream(self._ring, self.device_api_id)
+        return await self._rtc_stream.generate(sdp_offer)
+
+    async def close_rtc_stream(self):
+        rtc_stream = self._rtc_stream
+        self._rtc_stream = None
+        if rtc_stream:
+            await rtc_stream.close()
+
+    def get_ice_servers(self):
+        return ICE_SERVERS
