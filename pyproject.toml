@@ -41,7 +41,6 @@ ring-doorbell = "ring_doorbell.cli:cli"
 [tool.poetry.dependencies]
 python = "^3.8"
 requests = ">=2.0.0"
-requests-oauthlib = ">=1.3.0,<2"
 oauthlib = ">=3.0.0,<4"
 pytz = ">=2022.0"
 asyncclick = ">=8"
@@ -64,9 +63,10 @@ pytest-asyncio = "*"
 pytest-mock = "*"
 black = "*"
 pytest-socket = "^0.6.0"
-types-requests-oauthlib = "1.3"
 types-pytz = "^2024.1.0.20240203"
 types-click = "^7.1.8"
+types-requests = "^2.31.0.20240311"
+types-oauthlib = "^3.2.0.20240217"
 
 [tool.poetry.extras]
 docs = ["sphinx", "sphinx-rtd-theme", "sphinx-github-changelog"]

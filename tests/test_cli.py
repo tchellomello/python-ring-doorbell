@@ -120,6 +120,12 @@ async def test_auth(mocker, affect_method, exception, file_exists):
 
         return DEFAULT
 
+    def _add_token(uri, http_method, body, headers, token_placement=None, **kwargs):
+        return uri, headers, body
+
+    mocker.patch(
+        "oauthlib.oauth2.LegacyApplicationClient.add_token", side_effect=_add_token
+    )
     mocker.patch.object(Path, "is_file", return_value=file_exists)
     mocker.patch.object(Path, "read_text", return_value=load_fixture("ring_oauth.json"))
     mocker.patch("builtins.input", return_value="Foo")
