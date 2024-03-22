@@ -6,10 +6,37 @@ from pathlib import Path
 from time import time
 
 import pytest
-import requests_mock
+from aioresponses import CallbackResult, aioresponses
 from ring_doorbell import Auth, Ring
 from ring_doorbell.const import USER_AGENT
 from ring_doorbell.listen import can_listen
+
+
+# The kwargs below are useful for request assertions
+def json_request_kwargs():
+    return {
+        "headers": {
+            "User-Agent": "android:com.ringapp",
+            "Content-Type": "application/json",
+            "Authorization": "Bearer dummyBearerToken",
+        },
+        "timeout": 10,
+        "data": None,
+        "params": {},
+        "json": {},
+    }
+
+
+def nojson_request_kwargs():
+    return {
+        "headers": {
+            "User-Agent": "android:com.ringapp",
+            "Authorization": "Bearer dummyBearerToken",
+        },
+        "timeout": 10,
+        "data": None,
+        "params": {},
+    }
 
 
 def pytest_configure(config):
@@ -19,27 +46,28 @@ def pytest_configure(config):
 
 
 @pytest.fixture()
-def auth(requests_mock):
+async def auth():
     """Return auth object."""
     auth = Auth(USER_AGENT)
-    auth.fetch_token("foo", "bar")
-    return auth
+    await auth.async_fetch_token("foo", "bar")
+    yield auth
+
+    await auth.async_close()
 
 
 @pytest.fixture()
-def ring(auth):
+async def ring(auth):
     """Return updated ring object."""
     ring = Ring(auth)
-    ring.update_data()
+    await ring.async_update_data()
     return ring
 
 
 def _set_dings_to_now(active_dings) -> None:
-    dings = json.loads(active_dings)
-    for ding in dings:
+    for ding in active_dings:
         ding["now"] = time()
 
-    return json.dumps(dings)
+    return active_dings
 
 
 def load_fixture(filename):
@@ -47,6 +75,11 @@ def load_fixture(filename):
     path = Path(Path(__file__).parent / "fixtures" / filename)
     with path.open() as fdp:
         return fdp.read()
+
+
+def load_fixture_as_dict(filename):
+    """Load a fixture."""
+    return json.loads(load_fixture(filename))
 
 
 @pytest.fixture(autouse=True)
@@ -59,116 +92,194 @@ def _listen_mock(mocker, request) -> None:
     mocker.patch("firebase_messaging.FcmPushClient.is_started", return_value=True)
 
 
+def callback(url, **kwargs):  # noqa: ANN003
+    return CallbackResult(status=418)
+
+
+# tests to pull in request_mock and append uris
+@pytest.fixture()
+def devices_fixture():
+    class Devices:
+        def __init__(self) -> None:
+            """Initialise the class."""
+            self.updated = False
+
+        def devices(self) -> dict:
+            """Get the devices."""
+            if not self.updated:
+                return load_fixture_as_dict("ring_devices.json")
+            return load_fixture_as_dict("ring_devices_updated.json")
+
+        def callback(self, url, **kwargs) -> CallbackResult:  # noqa: ARG002, ANN003
+            """Return the callback result."""
+            return CallbackResult(payload=self.devices())
+
+    return Devices()
+
+
+@pytest.fixture()
+def putpatch_status_fixture():
+    class StatusOverrides:
+        def __init__(self) -> None:
+            """Initialise the class."""
+            self.overrides = {}
+
+        def callback(self, url, **kwargs) -> CallbackResult:  # noqa: ANN003, ARG002
+            """Return the callback."""
+            plain_url = str(url)
+            if plain_url in self.overrides:
+                return CallbackResult(body=b"", status=self.overrides[plain_url])
+
+            return CallbackResult(body=b"", status=204)
+
+    return StatusOverrides()
+
+
 # setting the fixture name to requests_mock allows other
 # tests to pull in request_mock and append uris
-@pytest.fixture(autouse=True, name="requests_mock")
-def requests_mock_fixture():
-    with requests_mock.Mocker() as mock:
+@pytest.fixture(autouse=True, name="aioresponses_mock")
+def aioresponses_mock_fixture(request, devices_fixture, putpatch_status_fixture):
+    with aioresponses() as mock:
         mock.post(
-            "https://oauth.ring.com/oauth/token", text=load_fixture("ring_oauth.json")
+            "https://oauth.ring.com/oauth/token",
+            payload=load_fixture_as_dict("ring_oauth.json"),
+            repeat=True,
         )
         mock.post(
             "https://api.ring.com/clients_api/session",
-            text=load_fixture("ring_session.json"),
+            payload=load_fixture_as_dict("ring_session.json"),
+            repeat=True,
         )
         mock.get(
             "https://api.ring.com/clients_api/ring_devices",
-            text=load_fixture("ring_devices.json"),
+            callback=devices_fixture.callback,
+            repeat=True,
         )
         mock.get(
             re.compile(r"https:\/\/api\.ring\.com\/clients_api\/chimes\/\d+\/health"),
-            text=load_fixture("ring_chime_health_attrs.json"),
+            payload=load_fixture_as_dict("ring_chime_health_attrs.json"),
+            repeat=True,
         )
         mock.get(
             re.compile(r"https:\/\/api\.ring\.com\/clients_api\/doorbots\/\d+\/health"),
-            text=load_fixture("ring_doorboot_health_attrs.json"),
+            payload=load_fixture_as_dict("ring_doorboot_health_attrs.json"),
+            repeat=True,
         )
         mock.get(
-            "https://api.ring.com/clients_api/doorbots/987652/history",
-            text=load_fixture("ring_doorbot_history.json"),
+            re.compile(
+                r"https:\/\/api\.ring\.com\/clients_api\/doorbots\/185036587\/history.*$"
+            ),
+            payload=load_fixture_as_dict("ring_intercom_history.json"),
+            repeat=True,
         )
         mock.get(
-            "https://api.ring.com/clients_api/doorbots/185036587/history",
-            text=load_fixture("ring_intercom_history.json"),
+            re.compile(
+                r"https:\/\/api\.ring\.com\/clients_api\/doorbots\/\d+\/history.*$"
+            ),
+            payload=load_fixture_as_dict("ring_doorbot_history.json"),
+            repeat=True,
         )
         mock.get(
             "https://api.ring.com/clients_api/dings/active",
-            text=_set_dings_to_now(load_fixture("ring_ding_active.json")),
+            payload=_set_dings_to_now(load_fixture_as_dict("ring_ding_active.json")),
+            repeat=True,
         )
         mock.put(
             "https://api.ring.com/clients_api/doorbots/987652/floodlight_light_off",
-            text="ok",
+            payload="ok",
+            repeat=True,
         )
         mock.put(
             "https://api.ring.com/clients_api/doorbots/987652/floodlight_light_on",
-            text="ok",
+            payload="ok",
+            repeat=True,
         )
-        mock.put("https://api.ring.com/clients_api/doorbots/987652/siren_on", text="ok")
         mock.put(
-            "https://api.ring.com/clients_api/doorbots/987652/siren_off", text="ok"
+            "https://api.ring.com/clients_api/doorbots/987652/siren_on",
+            payload="ok",
+            repeat=True,
+        )
+        mock.put(
+            "https://api.ring.com/clients_api/doorbots/987652/siren_off",
+            payload="ok",
+            repeat=True,
         )
         mock.get(
             "https://api.ring.com/groups/v1/locations/mock-location-id/groups",
-            text=load_fixture("ring_groups.json"),
+            payload=load_fixture_as_dict("ring_groups.json"),
+            repeat=True,
         )
         mock.get(
             "https://api.ring.com/groups/v1/locations/"
             "mock-location-id/groups/mock-group-id/devices",
-            text=load_fixture("ring_group_devices.json"),
+            payload=load_fixture_as_dict("ring_group_devices.json"),
+            repeat=True,
         )
         mock.post(
             "https://api.ring.com/groups/v1/locations/"
             "mock-location-id/groups/mock-group-id/devices",
-            text="ok",
+            payload="ok",
+            repeat=True,
         )
         mock.patch(
             re.compile(
                 r"https:\/\/api\.ring\.com\/devices\/v1\/devices\/\d+\/settings"
             ),
-            text="ok",
+            payload="ok",
+            repeat=True,
         )
         mock.get(
             re.compile(r"https:\/\/api\.ring\.com\/clients_api\/dings\/\d+\/recording"),
-            status_code=200,
-            content=b"123456",
+            status=200,
+            body=b"123456",
+            repeat=True,
         )
         mock.get(
             "https://api.ring.com/clients_api/dings/9876543212/recording",
-            status_code=200,
-            content=b"123456",
+            status=200,
+            body=b"123456",
+            repeat=True,
         )
         mock.patch(
             "https://api.ring.com/clients_api/device",
-            status_code=204,
-            content=b"",
+            callback=putpatch_status_fixture.callback,
+            repeat=True,
         )
         mock.put(
-            "https://api.ring.com/clients_api/doorbots/185036587",
-            status_code=204,
-            content=b"",
+            re.compile(r"https:\/\/api\.ring\.com\/clients_api\/doorbots\/.*$"),
+            status=204,
+            body=b"",
+            repeat=True,
         )
         mock.get(
             "https://api.ring.com/devices/v1/devices/185036587/settings",
-            text=load_fixture("ring_intercom_settings.json"),
+            payload=load_fixture_as_dict("ring_intercom_settings.json"),
+            repeat=True,
         )
         mock.get(
             "https://api.ring.com/clients_api/locations/mock-location-id/users",
-            text=load_fixture("ring_intercom_users.json"),
+            payload=load_fixture_as_dict("ring_intercom_users.json"),
+            repeat=True,
         )
         mock.post(
             "https://api.ring.com/clients_api/locations/mock-location-id/invitations",
-            text="ok",
+            payload="ok",
+            repeat=True,
         )
         mock.delete(
             (
                 "https://api.ring.com/clients_api/locations/"
                 "mock-location-id/invitations/123456789"
             ),
-            text="ok",
+            payload="ok",
+            repeat=True,
         )
         requestid = "44529542-3ed7-41da-807e-c170a01bac1d"
         mock.put(
             "https://api.ring.com/commands/v1/devices/185036587/device_rpc",
-            text='{"result": {"code": 0}, "id": "' + requestid + '", "jsonrpc": "2.0"}',
+            body=(
+                '{"result": {"code": 0}, "id": "' + requestid + '", "jsonrpc": "2.0"}'
+            ).encode(),
+            repeat=True,
         )
         yield mock
