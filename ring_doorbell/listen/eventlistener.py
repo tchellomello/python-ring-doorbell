@@ -63,10 +63,10 @@ class RingEventListener:
         self._subscription_counter = 1
         self._intercom_unlock_counter: Dict[int, int] = {}
 
-    def add_subscription_to_ring(self, token: str) -> None:
+    async def async_add_subscription_to_ring(self, token: str) -> None:
         """Add subscription to ring."""
         if not self._ring.session:
-            self._ring.create_session()
+            await self._ring.async_create_session()
 
         session_patch_data = {
             "device": {
@@ -79,7 +79,7 @@ class RingEventListener:
                 "push_notification_token": token,
             }
         }
-        resp = self._ring.auth.query(
+        resp = await self._ring.auth.async_query(
             API_URI + SUBSCRIPTION_ENDPOINT,
             method="PATCH",
             json=session_patch_data,
@@ -98,9 +98,9 @@ class RingEventListener:
         self.subscribed = True
         # Update devices for the intercom unlock events
         if not self._ring.devices_data:
-            self._ring.update_devices()
+            await self._ring.async_update_devices()
         if not self._ring.dings_data:
-            self._ring.update_dings()
+            await self._ring.async_update_dings()
 
     def add_notification_callback(self, callback: OnNotificationCallable) -> int:
         sub_id = self._subscription_counter
@@ -141,6 +141,23 @@ class RingEventListener:
         callback_loop: Optional[asyncio.AbstractEventLoop] = None,
         timeout: int = 30,
     ) -> bool:
+        return self._ring.auth._run_async_on_event_loop(
+            self.async_start(
+                callback,
+                listen_loop=listen_loop,
+                callback_loop=callback_loop,
+                timeout=timeout,
+            )
+        )
+
+    async def async_start(
+        self,
+        callback: Optional[OnNotificationCallable] = None,
+        *,
+        listen_loop: Optional[asyncio.AbstractEventLoop] = None,
+        callback_loop: Optional[asyncio.AbstractEventLoop] = None,
+        timeout: int = 30,
+    ) -> bool:
         if not callback:
             callback = self._ring.add_event_to_dings_data
 
@@ -150,12 +167,15 @@ class RingEventListener:
                 credentials_updated_callback=self._credentials_updated_callback,
                 config=self._config,
             )
-        fcm_token = self._receiver.checkin(RING_SENDER_ID, self._app_id)
+        loop = listen_loop if listen_loop else asyncio.get_running_loop()
+        fcm_token: Optional[str] = await loop.run_in_executor(
+            None, self._receiver.checkin, RING_SENDER_ID, self._app_id
+        )
         if not fcm_token:
             _logger.error("Unable to check in to fcm, event listener not started")
             return False
 
-        self.add_subscription_to_ring(fcm_token)
+        await self.async_add_subscription_to_ring(fcm_token)
         if self.subscribed:
             self.add_notification_callback(callback)
 

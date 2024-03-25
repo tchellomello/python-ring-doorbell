@@ -1,8 +1,13 @@
 # vim:sw=4:ts=4:et:
 """Python Ring Auth Class."""
+import asyncio
+import contextlib
 import uuid
-from typing import Any, Callable, Dict, Optional
+from json import loads as json_loads
+from threading import Thread
+from typing import Any, Callable, Coroutine, Dict, Optional
 
+from aiohttp import BasicAuth, ClientSession
 from oauthlib.common import urldecode
 from oauthlib.oauth2 import (
     LegacyApplicationClient,
@@ -10,11 +15,9 @@ from oauthlib.oauth2 import (
     OAuth2Error,
     TokenExpiredError,
 )
-from requests import HTTPError, Response, Session, Timeout
-from requests import auth as requests_auth
-from requests.adapters import HTTPAdapter, Retry
+from requests import HTTPError, Response, Timeout
 
-from ring_doorbell.const import API_URI, NAMESPACE_UUID, TIMEOUT, OAuth
+from ring_doorbell.const import NAMESPACE_UUID, TIMEOUT, OAuth
 from ring_doorbell.exceptions import (
     AuthenticationError,
     Requires2FAError,
@@ -32,6 +35,7 @@ class Auth:
         token: Optional[Dict[str, Any]] = None,
         token_updater: Optional[Callable[[Dict[str, Any]], None]] = None,
         hardware_id: Optional[str] = None,
+        http_client_session: Optional[ClientSession] = None,
     ) -> None:
         """
         :type token: Optional[Dict[str, str]]
@@ -52,15 +56,36 @@ class Auth:
         self.device_model = "ring-doorbell:" + user_agent
         self.token_updater = token_updater
         self._token: Dict[str, Any] = token or {}
-        self._session = Session()
+        self._local_session: Optional[ClientSession] = None
+        self._http_client_session = http_client_session
         self._oauth_client = LegacyApplicationClient(
             client_id=OAuth.CLIENT_ID, token=token
         )
-        self._auth = requests_auth.HTTPBasicAuth(OAuth.CLIENT_ID, "")
-        retries = Retry(connect=5, read=0, backoff_factor=2)
-        self._session.mount(API_URI, HTTPAdapter(max_retries=retries))
+        self._auth = BasicAuth(OAuth.CLIENT_ID, "")
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._init_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._new_loop: Optional[asyncio.AbstractEventLoop] = None
+        with contextlib.suppress(RuntimeError):
+            self._init_loop = asyncio.get_running_loop()
+        self._background_thread_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    @property
+    def _session(self) -> ClientSession:
+        if self._http_client_session:
+            return self._http_client_session
+        if self._local_session is None:
+            self._local_session = ClientSession()
+            self._loop = asyncio.get_running_loop()
+        return self._local_session
 
     def fetch_token(
+        self, username: str, password: str, otp_code: Optional[str] = None
+    ) -> Dict[str, Any]:
+        return self._run_async_on_event_loop(
+            self.async_fetch_token(username, password, otp_code)
+        )
+
+    async def async_fetch_token(
         self, username: str, password: str, otp_code: Optional[str] = None
     ) -> Dict[str, Any]:
         """Initial token fetch with username/password & 2FA
@@ -79,16 +104,17 @@ class Auth:
                 username, password, scope=OAuth.SCOPE
             )
             data = dict(urldecode(body))
-            resp = self._session.request(
+            resp = await self._session.request(
                 "POST",
                 OAuth.ENDPOINT,
                 data=data,
                 headers=headers,
                 auth=self._auth,
-                verify=True,
             )
+            async with resp:
+                text = await resp.text()
             self._token = self._oauth_client.parse_request_body_response(
-                resp.text, scope=OAuth.SCOPE
+                text, scope=OAuth.SCOPE
             )
         except MissingTokenError as ex:
             raise Requires2FAError from ex
@@ -101,6 +127,9 @@ class Auth:
         return self._token
 
     def refresh_tokens(self) -> Dict[str, Any]:
+        return self._run_async_on_event_loop(self.async_refresh_tokens())
+
+    async def async_refresh_tokens(self) -> Dict[str, Any]:
         """Refreshes the auth tokens"""
         try:
             headers = {
@@ -111,11 +140,13 @@ class Auth:
                 refresh_token=self._token["refresh_token"]
             )
             data = dict(urldecode(body))
-            resp = self._session.request(
+            resp = await self._session.request(
                 "POST", OAuth.ENDPOINT, data=data, headers=headers, auth=self._auth
             )
+            async with resp:
+                text = await resp.text()
             self._token = self._oauth_client.parse_request_body_response(
-                resp.text, scope=OAuth.SCOPE
+                text, scope=OAuth.SCOPE
             )
         except OAuth2Error as ex:
             raise AuthenticationError(ex) from ex
@@ -133,6 +164,68 @@ class Auth:
         """Get device model."""
         return self.device_model
 
+    def _start_background_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
+    def _get_query_loop(
+        self, current_loop: Optional[asyncio.AbstractEventLoop]
+    ) -> asyncio.AbstractEventLoop:
+        if current_loop is None:
+            if self._init_loop:  # Running in executor
+                return self._init_loop
+
+            if not self._new_loop:
+                self._new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self._new_loop)
+            return self._new_loop
+
+        if not current_loop.is_running():
+            return current_loop
+
+        if self._background_thread_loop is None:
+            self._background_thread_loop = asyncio.new_event_loop()
+            t = Thread(
+                target=self._start_background_loop,
+                args=(self._background_thread_loop,),
+                daemon=True,
+                name="ring_doorbell_query_loop",
+            )
+            t.start()
+        return self._background_thread_loop
+
+    def _run_async_on_event_loop(self, func: Coroutine) -> Any:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        loop = self._get_query_loop(current_loop)
+        if self._loop and self._loop != loop:
+            func.close()  # Close to prevent never awaited warnings
+            raise RingError(
+                "Detected event loop change, don't mix sync and async calls."
+            )
+        self._loop = loop
+        # Running in an executor and loop is running or loop is on background thread
+        if (
+            current_loop is None and self._init_loop and self._loop.is_running()
+        ) or loop == self._background_thread_loop:
+            task = asyncio.run_coroutine_threadsafe(func, loop)
+            return task.result()
+        else:
+            return loop.run_until_complete(func)
+
+    async def async_close(self) -> None:
+        """Close aiohttp session."""
+        session = self._local_session
+        self._local_session = None
+        if session:
+            await session.close()
+
+    def close(self) -> None:
+        """Close aiohttp session."""
+        self._run_async_on_event_loop(self.async_close())
+
     def query(
         self,
         url: str,
@@ -143,6 +236,34 @@ class Auth:
         timeout: Optional[float] = None,
         raise_for_status: bool = True,
     ) -> Response:
+        return self._run_async_on_event_loop(
+            self.async_query(
+                url, method, extra_params, data, json, timeout, raise_for_status
+            )
+        )
+
+    class Response:
+        def __init__(self, content: bytes, status_code: int) -> None:
+            self.content = content
+            self.status_code = status_code
+
+        @property
+        def text(self) -> str:
+            return self.content.decode()
+
+        def json(self) -> Any:
+            return json_loads(self.text)
+
+    async def async_query(
+        self,
+        url: str,
+        method: str = "GET",
+        extra_params: Optional[Dict[str, Any]] = None,
+        data: Optional[bytes] = None,
+        json: Optional[Dict[Any, Any]] = None,
+        timeout: Optional[float] = None,
+        raise_for_status: bool = True,
+    ) -> "Auth.Response":
         """Query data from Ring API."""
         if timeout is None:
             timeout = TIMEOUT
@@ -167,18 +288,18 @@ class Auth:
                     body=data,
                     headers=headers,
                 )
-                resp = self._session.request(
+                resp = await self._session.request(
                     method, url, headers=headers, data=data, **kwargs
                 )
             except TokenExpiredError:
-                self._token = self.refresh_tokens()
+                self._token = await self.async_refresh_tokens()
                 url, headers, data = self._oauth_client.add_token(
                     url,
                     http_method=method,
                     body=data,
                     headers=headers,
                 )
-                resp = self._session.request(
+                resp = await self._session.request(
                     method, url, headers=headers, data=data, **kwargs
                 )
         except AuthenticationError as ex:
@@ -188,17 +309,20 @@ class Auth:
         except Exception as ex:
             raise RingError(f"Unknown error during query of url {url}: {ex}") from ex
 
-        if resp.status_code == 401:
-            # Check whether there's an issue with the token grant
-            self._token = self.refresh_tokens()
+        async with resp:
+            if resp.status == 401:
+                # Check whether there's an issue with the token grant
+                self._token = await self.async_refresh_tokens()
 
-        if raise_for_status:
-            try:
-                resp.raise_for_status()
-            except HTTPError as ex:
-                raise RingError(
-                    f"HTTP error with status code {resp.status_code} "
-                    + f"during query of url {url}: {ex}"
-                ) from ex
+            if raise_for_status:
+                try:
+                    resp.raise_for_status()
+                except HTTPError as ex:
+                    raise RingError(
+                        f"HTTP error with status code {resp.status} "
+                        + f"during query of url {url}: {ex}"
+                    ) from ex
 
-        return resp
+            response_data = await resp.read()
+            auth_resp = Auth.Response(response_data, resp.status)
+        return auth_resp

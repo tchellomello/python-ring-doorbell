@@ -5,10 +5,11 @@ import json
 
 import pytest
 
-from ring_doorbell import Ring
+from ring_doorbell import Auth, Ring
+from ring_doorbell.const import USER_AGENT
 from ring_doorbell.exceptions import RingError
 from ring_doorbell.listen import can_listen
-from tests.conftest import load_fixture
+from tests.conftest import load_fixture, load_fixture_as_dict
 
 # test_module.py
 pytestmark = pytest.mark.skipif(
@@ -26,7 +27,7 @@ async def test_listen(auth, mocker):
     ring = Ring(auth)
     listener = RingEventListener(ring)
 
-    listener.start()
+    await listener.async_start()
     assert firebase_messaging.FcmPushClient.checkin.call_count == 1
     assert firebase_messaging.FcmPushClient.start.call_count == 1
     assert listener.subscribed is True
@@ -52,7 +53,7 @@ async def test_active_dings(auth, mocker):
 
     ring = Ring(auth)
     listener = RingEventListener(ring)
-    listener.start()
+    await listener.async_start()
     assert firebase_messaging.FcmPushClient.checkin.call_count == 1
     assert firebase_messaging.FcmPushClient.start.call_count == 1
     assert listener.subscribed is True
@@ -92,7 +93,7 @@ async def test_intercom_unlock(auth, mocker):
 
     ring = Ring(auth)
     listener = RingEventListener(ring)
-    listener.start()
+    await listener.async_start()
     assert firebase_messaging.FcmPushClient.checkin.call_count == 1
     assert firebase_messaging.FcmPushClient.start.call_count == 1
     assert listener.subscribed is True
@@ -113,22 +114,20 @@ async def test_intercom_unlock(auth, mocker):
 
 
 @pytest.mark.nolistenmock
-async def test_listen_subscribe_fail(auth, mocker, requests_mock, caplog):
+async def test_listen_subscribe_fail(
+    auth, mocker, aioresponses_mock, caplog, putpatch_status_fixture
+):
     checkinmock = mocker.patch(
         "firebase_messaging.FcmPushClient.checkin", return_value="foobar"
     )
     connectmock = mocker.patch("firebase_messaging.FcmPushClient.start")
     mocker.patch("firebase_messaging.FcmPushClient.is_started", return_value=True)
 
-    requests_mock.patch(
-        "https://api.ring.com/clients_api/device",
-        status_code=401,
-        content=b"foobar",
-    )
+    putpatch_status_fixture.overrides["https://api.ring.com/clients_api/device"] = 401
 
     ring = Ring(auth)
     listener = RingEventListener(ring)
-    listener.start()
+    await listener.async_start()
     # Check in gets and error so register is called
     assert checkinmock.call_count == 1
     assert listener.subscribed is False
@@ -137,7 +136,7 @@ async def test_listen_subscribe_fail(auth, mocker, requests_mock, caplog):
 
     exp = (
         "Unable to checkin to listen service, "
-        + "response was 401 foobar, event listener not started"
+        + "response was 401 , event listener not started"
     )
     assert (
         len(
@@ -152,7 +151,7 @@ async def test_listen_subscribe_fail(auth, mocker, requests_mock, caplog):
 
 
 @pytest.mark.nolistenmock
-async def test_listen_gcm_fail(auth, mocker, requests_mock, caplog):
+async def test_listen_gcm_fail(auth, mocker, aioresponses_mock, caplog):
     # Check in gets and error so register is called, the subscribe gets an error
     credentials = json.loads(load_fixture("ring_listen_credentials.json"))
     checkinmock = mocker.patch(
@@ -166,7 +165,7 @@ async def test_listen_gcm_fail(auth, mocker, requests_mock, caplog):
 
     ring = Ring(auth)
     listener = RingEventListener(ring, credentials)
-    listener.start()
+    await listener.async_start()
     # Check in gets and error so register is called
     assert checkinmock.call_count == 1
     assert registermock.call_count == 1
@@ -176,7 +175,7 @@ async def test_listen_gcm_fail(auth, mocker, requests_mock, caplog):
 
 
 @pytest.mark.nolistenmock
-async def test_listen_fcm_fail(auth, mocker, requests_mock, caplog):
+async def test_listen_fcm_fail(auth, mocker, aioresponses_mock, caplog):
     checkinmock = mocker.patch(
         "firebase_messaging.FcmPushClient.checkin", return_value=None
     )
@@ -185,7 +184,7 @@ async def test_listen_fcm_fail(auth, mocker, requests_mock, caplog):
 
     ring = Ring(auth)
     listener = RingEventListener(ring)
-    listener.start()
+    await listener.async_start()
     # Check in gets and error so register is called
     assert checkinmock.call_count == 1
 
@@ -205,7 +204,8 @@ async def test_listen_fcm_fail(auth, mocker, requests_mock, caplog):
     )
 
 
-def test_no_event_loop(auth):
+def test_no_event_loop():
+    auth = Auth(USER_AGENT, token=load_fixture_as_dict("ring_oauth.json"))
     ring = Ring(auth)
     listener = RingEventListener(ring)
     listener.start()

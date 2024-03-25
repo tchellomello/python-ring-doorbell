@@ -8,7 +8,7 @@ import json
 import logging
 import select
 import sys
-import traceback
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path, PurePath
 from typing import Optional, Sequence, cast
@@ -45,23 +45,47 @@ cache_file = Path(CLI_TOKEN_FILE)
 gcm_cache_file = Path(GCM_TOKEN_FILE)
 
 
-class ExceptionHandlerGroup(click.Group):
-    """Group to capture all exceptions and echo them nicely.
+def CatchAllExceptions(cls):
+    """Capture all exceptions and prints them nicely.
 
-    Idea from https://stackoverflow.com/a/44347763
+    Idea from https://stackoverflow.com/a/44347763 and
+    https://stackoverflow.com/questions/52213375
     """
 
-    def __call__(self, *args, **kwargs):
-        """Run the coroutine in the event loop and echo any exceptions."""
-        try:
-            asyncio.run(self.main(*args, **kwargs))
-        except asyncio.CancelledError:
-            pass
-        except KeyboardInterrupt:
-            echo("Cli interrupted with keyboard interrupt")
-        except Exception as ex:  # pylint: disable=broad-exception-caught
-            echo(f"Got error: {ex!r}")
-            traceback.print_exc()
+    def _handle_exception(debug, exc):
+        if isinstance(exc, click.ClickException):
+            raise
+        echo(f"Raised error: {exc}")
+        if debug:
+            raise
+        echo("Run with --debug enabled to see stacktrace")
+        sys.exit(1)
+
+    class _CommandCls(cls):
+        _debug = False
+
+        async def make_context(self, info_name, args, parent=None, **extra):
+            self._debug = any(
+                [arg for arg in args if arg in ["--debug", "-d", "--verbose", "-v"]]
+            )
+            try:
+                return await super().make_context(
+                    info_name, args, parent=parent, **extra
+                )
+            except Exception as exc:
+                _handle_exception(self._debug, exc)
+
+        async def invoke(self, ctx):
+            try:
+                return await super().invoke(ctx)
+            except asyncio.CancelledError:
+                pass
+            except KeyboardInterrupt:
+                echo("Cli interrupted with keyboard interrupt")
+            except Exception as exc:
+                _handle_exception(self._debug, exc)
+
+    return _CommandCls
 
 
 class MutuallyExclusiveOption(click.Option):
@@ -110,7 +134,7 @@ def _format_filename(device_name, event):
     return filename
 
 
-def _do_auth(username, password, user_agent=USER_AGENT):
+async def _do_auth(username, password, user_agent=USER_AGENT):
     if not username:
         username = input("Username: ")
 
@@ -119,14 +143,14 @@ def _do_auth(username, password, user_agent=USER_AGENT):
 
     auth = Auth(user_agent, None, token_updated)
     try:
-        auth.fetch_token(username, password)
+        await auth.async_fetch_token(username, password)
         return auth
     except Requires2FAError:
-        auth.fetch_token(username, password, input("2FA Code: "))
+        await auth.async_fetch_token(username, password, input("2FA Code: "))
         return auth
 
 
-def _get_ring(username, password, do_update_data, user_agent=USER_AGENT):
+async def _get_ring(username, password, do_update_data, user_agent=USER_AGENT):
     # connect to Ring account
     global cache_file, gcm_cache_file
     if user_agent != USER_AGENT:
@@ -139,26 +163,32 @@ def _get_ring(username, password, do_update_data, user_agent=USER_AGENT):
             token_updated,
         )
         ring = Ring(auth)
-        do_method = ring.update_data if do_update_data else ring.create_session
+        do_method = (
+            ring.async_update_data if do_update_data else ring.async_create_session
+        )
         try:
-            do_method()
+            await do_method()
         except AuthenticationError:
-            auth = _do_auth(username, password)
+            auth = await _do_auth(username, password)
             ring = Ring(auth)
-            do_method = ring.update_data if do_update_data else ring.create_session
-            do_method()
+            do_method = (
+                ring.async_update_data if do_update_data else ring.async_create_session
+            )
+            await do_method()
     else:
-        auth = _do_auth(username, password, user_agent=user_agent)
+        auth = await _do_auth(username, password, user_agent=user_agent)
         ring = Ring(auth)
-        do_method = ring.update_data if do_update_data else ring.create_session
-        do_method()
+        do_method = (
+            ring.async_update_data if do_update_data else ring.async_create_session
+        )
+        await do_method()
 
     return ring
 
 
 @click.group(
     invoke_without_command=True,
-    cls=ExceptionHandlerGroup,
+    cls=CatchAllExceptions(click.Group),
 )
 @click.version_option(package_name="ring_doorbell")
 @click.option(
@@ -199,8 +229,16 @@ async def cli(ctx, username, password, debug, user_agent):
     no_update_commands = ["listen"]
     no_update = ctx.invoked_subcommand in no_update_commands
 
-    ring = _get_ring(username, password, not no_update, user_agent)
-    ctx.obj = ring
+    @asynccontextmanager
+    async def async_wrapped_ring(ring: Ring):
+        try:
+            yield ring
+        finally:
+            await ring.auth.async_close()
+
+    ring = await _get_ring(username, password, not no_update, user_agent)
+    # wrapped ring will ensure async_close is called when cli is finished
+    ctx.obj = await ctx.with_async_resource(async_wrapped_ring(ring))
 
     if ctx.invoked_subcommand is None:
         return await ctx.invoke(show)
@@ -275,7 +313,7 @@ async def motion_detection(ctx, ring: Ring, device_name, turn_on, turn_off):
         echo(f"{str(device)} already has motion detection {state}")
         return
 
-    device.motion_detection = turn_on if turn_on else False
+    await device.async_set_motion_detection(turn_on if turn_on else False)
     state = "on" if device.motion_detection else "off"
     echo(f"{str(device)} motion detection set to {state}")
     return
@@ -307,7 +345,7 @@ async def show(ctx, ring: Ring, device_name):
         devices = ring.get_device_list()
 
     for dev in devices:
-        dev.update_health_data()
+        await dev.async_update_health_data()
         echo("Name:       %s" % dev.name)
         echo("Family:     %s" % dev.family)
         echo("ID:         %s" % dev.id)
@@ -400,7 +438,7 @@ async def groups(ring: Ring, json_flag):
         echo("No ring device groups setup")
     else:
         for light_group in ring.groups().values():
-            light_group.update()
+            await light_group.async_update()
             echo(json.dumps(light_group._attrs, indent=2))
             echo(json.dumps(light_group._health_attrs, indent=2))
 
@@ -415,7 +453,8 @@ async def groups(ring: Ring, json_flag):
 @pass_ring
 async def raw_query(ring: Ring, url):
     """Directly query a url and return json result."""
-    data = ring.query(url).json()
+    resp = await ring.async_query(url)
+    data = resp.json()
     echo(json.dumps(data, indent=2))
 
 
@@ -464,7 +503,7 @@ async def history_command(ctx, ring: Ring, device_name, kind, limit, json_flag):
         )
         return await ctx.invoke(list_command)
 
-    history = device.history(limit=limit, kind=kind, convert_timezone=False)
+    history = await device.async_history(limit=limit, kind=kind, convert_timezone=False)
     echo(json.dumps(history, indent=2))
 
 
@@ -543,7 +582,7 @@ async def videos(
         and not download
         and not download_all
         and device.last_recording_id
-        and (url := device.recording_url(device.last_recording_id))
+        and (url := await device.async_recording_url(device.last_recording_id))
     ):
         echo("Last recording url is: " + url)
         return
@@ -553,15 +592,17 @@ async def videos(
         download = True
         max_count = -1
 
-    def _get_events(device, max_count):
+    async def _get_events(device, max_count):
         limit = 100 if max_count == -1 else min(100, max_count)
         events = []
-        history = device.history(limit=limit)
+        history = await device.async_history(limit=limit)
         while len(history) > 0:
             events += history
             if (len(events) >= max_count and max_count != -1) or len(history) < limit:
                 break
-            history = device.history(older_than=history[-1]["id"], limit=limit)
+            history = await device.async_history(
+                older_than=history[-1]["id"], limit=limit
+            )
         return events
 
     if count:
@@ -570,7 +611,7 @@ async def videos(
             + "\tThis may take some time....\n"
         )
 
-        events = _get_events(device, max_count)
+        events = await _get_events(device, max_count)
 
         motion = len([m["kind"] for m in events if m["kind"] == "motion"])
         ding = len([m["kind"] for m in events if m["kind"] == "ding"])
@@ -587,7 +628,7 @@ async def videos(
                 "\tGetting videos linked on your Ring account.\n"
                 + "\tThis may take some time....\n"
             )
-            events = _get_events(device, max_count)
+            events = await _get_events(device, max_count)
 
         echo(
             f"\tDownloading {len(events)} videos linked on your Ring account.\n"
@@ -599,7 +640,9 @@ async def videos(
             filename = str(PurePath(download_to, _format_filename(device.name, event)))
             echo(f"\t{counter}/{len(events)} Downloading {filename}")
 
-            device.recording_download(event["id"], filename=filename, override=False)
+            await device.async_recording_download(
+                event["id"], filename=filename, override=False
+            )
 
 
 async def ainput(string: str):
@@ -706,7 +749,7 @@ async def listen(
             credentials = json.load(f)
 
     event_listener = RingEventListener(ring, credentials, credentials_updated_callback)
-    event_listener.start()
+    await event_listener.async_start()
     event_listener.add_notification_callback(_event_handler(ring).on_event)
 
     await ainput("Listening, press enter to cancel\n")
