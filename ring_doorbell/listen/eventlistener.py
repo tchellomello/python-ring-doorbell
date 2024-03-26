@@ -3,7 +3,6 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
 from firebase_messaging import FcmPushClient
@@ -22,6 +21,7 @@ from ring_doorbell.const import (
     SUBSCRIPTION_ENDPOINT,
 )
 from ring_doorbell.exceptions import RingError
+from ring_doorbell.generic import get_time
 from ring_doorbell.ring import Ring
 
 from ..event import RingEvent
@@ -166,10 +166,10 @@ class RingEventListener:
                 credentials=self._credentials,
                 credentials_updated_callback=self._credentials_updated_callback,
                 config=self._config,
+                http_client_session=self._ring.auth._http_client_session,
             )
-        loop = listen_loop if listen_loop else asyncio.get_running_loop()
-        fcm_token: Optional[str] = await loop.run_in_executor(
-            None, self._receiver.checkin, RING_SENDER_ID, self._app_id
+        fcm_token: Optional[str] = await self._receiver.checkin(
+            RING_SENDER_ID, self._app_id
         )
         if not fcm_token:
             _logger.error("Unable to check in to fcm, event listener not started")
@@ -188,7 +188,7 @@ class RingEventListener:
             start = time.time()
             now = start
             while not self._receiver.is_started() and now - start < timeout:
-                time.sleep(0.1)
+                await asyncio.sleep(0.1)
                 now = time.time()
             self.started = self._receiver.is_started()
 
@@ -209,9 +209,7 @@ class RingEventListener:
             state = subtype
 
         created_at = ding["created_at"]
-        create_seconds = (
-            datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%f%z")
-        ).timestamp()
+        create_seconds = get_time(created_at).timestamp()
         re = RingEvent(
             id=ding["id"],
             kind=kind,

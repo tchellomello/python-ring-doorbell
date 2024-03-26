@@ -155,10 +155,10 @@ async def test_listen_gcm_fail(auth, mocker, aioresponses_mock, caplog):
     # Check in gets and error so register is called, the subscribe gets an error
     credentials = json.loads(load_fixture("ring_listen_credentials.json"))
     checkinmock = mocker.patch(
-        "firebase_messaging.fcmpushclient.gcm_check_in", return_value=None
+        "firebase_messaging.fcmregister.FcmRegister.gcm_check_in", return_value=None
     )
     registermock = mocker.patch(
-        "firebase_messaging.FcmPushClient.register", return_value=credentials
+        "firebase_messaging.fcmregister.FcmRegister.register", return_value=credentials
     )
     connectmock = mocker.patch("firebase_messaging.FcmPushClient.start")
     mocker.patch("firebase_messaging.FcmPushClient.is_started", return_value=True)

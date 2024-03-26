@@ -22,5 +22,5 @@ repos:
           scripts/.*|
           docs/.*|
           tests/.*|
-          test\.py
+          test\.py$
       )$

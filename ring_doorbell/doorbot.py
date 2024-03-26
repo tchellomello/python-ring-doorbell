@@ -1,5 +1,6 @@
 # vim:sw=4:ts=4:et:
 """Python Ring Doorbell wrapper."""
+import asyncio
 import logging
 import os
 import time
@@ -455,7 +456,7 @@ class RingDoorBell(RingGeneric):
         await self._ring.async_query(url, method="POST", json=payload)
         request_time = time.time()
         for _ in range(retries):
-            time.sleep(delay)
+            await asyncio.sleep(delay)
             resp = await self._ring.async_query(url, method="POST", json=payload)
             response = resp.json()
             if response["timestamps"][0]["timestamp"] / 1000 > request_time:

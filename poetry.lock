@@ -705,20 +705,20 @@ typing = ["typing-extensions (>=4.7.1)"]
 
 [[package]]
 name = "firebase-messaging"
-version = "0.2.1"
+version = "0.3.0"
 description = "FCM/GCM push notification client"
 optional = true
-python-versions = ">=3.8,<4.0"
+python-versions = "<4.0,>=3.8"
 files = [
-    {file = "firebase_messaging-0.2.1-py3-none-any.whl", hash = "sha256:46961137d131ab9d1603508e1111438a1ed4fb97093be7dbfbe789bc8424dd7c"},
-    {file = "firebase_messaging-0.2.1.tar.gz", hash = "sha256:16d754c16edfd872eceae8ba85b8989fab811f4ff2654f9fcfd988ea565c326d"},
+    {file = "firebase_messaging-0.3.0-py3-none-any.whl", hash = "sha256:a13fcd52e69316d0c9a8238a2df94d7a8c195883e83e8e89ed27a8815d70f5e0"},
+    {file = "firebase_messaging-0.3.0.tar.gz", hash = "sha256:1f4ecd81d78da25ddb50842f04b7f4a13ee401341c0d3ea0c1bd8492ba067f3b"},
 ]
 
 [package.dependencies]
+aiohttp = ">=3.9.3,<4.0.0"
 cryptography = ">=2.5"
 http-ece = ">=1.1.0,<2.0.0"
 protobuf = ">=4.24.3,<5.0.0"
-requests = ">=2.19.0"
 
 [package.extras]
 docs = ["sphinx (==7.1.2)", "sphinx-autodoc-typehints (>=1.24.0,<2.0.0)", "sphinx-rtd-theme (>=1.3.0,<2.0.0)"]
@@ -1833,6 +1833,17 @@ docs = ["furo (>=2023.8.19)", "sphinx (>=7.2.4)", "sphinx-argparse-cli (>=1.11.1
 testing = ["build[virtualenv] (>=0.10)", "covdefaults (>=2.3)", "detect-test-pollution (>=1.1.1)", "devpi-process (>=1)", "diff-cover (>=7.7)", "distlib (>=0.3.7)", "flaky (>=3.7)", "hatch-vcs (>=0.3)", "hatchling (>=1.18)", "psutil (>=5.9.5)", "pytest (>=7.4)", "pytest-cov (>=4.1)", "pytest-mock (>=3.11.1)", "pytest-xdist (>=3.3.1)", "re-assert (>=1.1)", "time-machine (>=2.12)", "wheel (>=0.41.2)"]
 
 [[package]]
+name = "types-aiofiles"
+version = "23.2.0.20240311"
+description = "Typing stubs for aiofiles"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "types-aiofiles-23.2.0.20240311.tar.gz", hash = "sha256:208e6b090de732739ef74ab8f133c954479c8e77e614f276f9e475a0cc986430"},
+    {file = "types_aiofiles-23.2.0.20240311-py3-none-any.whl", hash = "sha256:ed10a8002d88c94220597b77304cf1a1d8cf489c7143fc3ffa2c96488b20fec7"},
+]
+
+[[package]]
 name = "types-click"
 version = "7.1.8"
 description = "Typing stubs for click"
@@ -2052,4 +2063,4 @@ listen = ["firebase-messaging"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "4b9ec10d524fddf4bc1a6052516b1b4d34710fffeb0e7e49b7c06acd08ab1b8f"
+content-hash = "3b5f30332e2b347aad1113b3984a6c0d32fd879457284169d2e38ca17a786ef1"

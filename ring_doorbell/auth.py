@@ -288,6 +288,7 @@ class Auth:
                     body=data,
                     headers=headers,
                 )
+
                 resp = await self._session.request(
                     method, url, headers=headers, data=data, **kwargs
                 )

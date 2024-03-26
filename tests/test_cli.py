@@ -199,10 +199,12 @@ async def test_listen_store_credentials(mocker, auth):
 
     with runner.isolated_filesystem():
         mocker.patch(
-            "firebase_messaging.fcmpushclient.gcm_check_in", return_value="foobar"
+            "firebase_messaging.fcmregister.FcmRegister.gcm_check_in",
+            return_value="foobar",
         )
         mocker.patch(
-            "firebase_messaging.FcmPushClient.register", return_value=credentials
+            "firebase_messaging.fcmregister.FcmRegister.register",
+            return_value=credentials,
         )
         mocker.patch("firebase_messaging.FcmPushClient.start")
         mocker.patch("firebase_messaging.FcmPushClient.is_started", return_value=True)
@@ -212,14 +214,14 @@ async def test_listen_store_credentials(mocker, auth):
 
         await runner.invoke(listen, ["--store-credentials"], obj=ring)
         assert os.path.isfile(GCM_TOKEN_FILE)
-        assert firebase_messaging.fcmpushclient.gcm_check_in.call_count == 0
-        assert firebase_messaging.FcmPushClient.register.call_count == 1
+        assert firebase_messaging.fcmregister.FcmRegister.gcm_check_in.call_count == 0
+        assert firebase_messaging.fcmregister.FcmRegister.register.call_count == 1
         assert firebase_messaging.FcmPushClient.start.call_count == 1
 
         ring = Ring(auth)
         await runner.invoke(listen, ["--store-credentials"], obj=ring)
-        assert firebase_messaging.fcmpushclient.gcm_check_in.call_count == 1
-        assert firebase_messaging.FcmPushClient.register.call_count == 1
+        assert firebase_messaging.fcmregister.FcmRegister.gcm_check_in.call_count == 1
+        assert firebase_messaging.fcmregister.FcmRegister.register.call_count == 1
         assert firebase_messaging.FcmPushClient.start.call_count == 2
 
 

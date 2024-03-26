@@ -14,6 +14,14 @@ from ring_doorbell.const import URL_DOORBELL_HISTORY, RingCapability
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_time(fromtime: str) -> datetime:
+    try:
+        totime = datetime.strptime(fromtime, "%Y-%m-%dT%H:%M:%S.%f%z")
+    except ValueError:
+        totime = datetime.strptime(fromtime, "%Y-%m-%dT%H:%M:%S%z")
+    return totime
+
+
 class RingGeneric:
     """Generic Implementation for Ring Chime/Doorbell."""
 
