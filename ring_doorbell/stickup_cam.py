@@ -142,13 +142,17 @@ class RingStickUpCam(RingDoorBell):
     @lights.setter
     def lights(self, state: str) -> None:
         """Control the lights."""
+        self._ring.auth._run_async_on_event_loop(self.async_set_lights(state))
+
+    async def async_set_lights(self, state: str) -> None:
+        """Control the lights."""
         values = ["on", "off"]
         if state not in values:
             raise RingError(MSG_ALLOWED_VALUES.format(", ".join(values)))
 
         url = LIGHTS_ENDPOINT.format(self.device_api_id, state)
-        self._ring.query(url, method="PUT")
-        self._ring.update_devices()
+        await self._ring.async_query(url, method="PUT")
+        await self._ring.async_update_devices()
 
     @property
     def siren(self) -> int:
@@ -159,6 +163,10 @@ class RingStickUpCam(RingDoorBell):
 
     @siren.setter
     def siren(self, duration: int) -> None:
+        """Control the siren."""
+        self._ring.auth._run_async_on_event_loop(self.async_set_siren(duration))
+
+    async def async_set_siren(self, duration: int) -> None:
         """Control the siren."""
         if not (
             (isinstance(duration, int))
@@ -175,5 +183,5 @@ class RingStickUpCam(RingDoorBell):
             state = "off"
             params = {}
         url = SIREN_ENDPOINT.format(self.device_api_id, state)
-        self._ring.query(url, extra_params=params, method="PUT")
-        self._ring.update_devices()
+        await self._ring.async_query(url, extra_params=params, method="PUT")
+        await self._ring.async_update_devices()

@@ -14,6 +14,14 @@ from ring_doorbell.const import URL_DOORBELL_HISTORY, RingCapability
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_time(fromtime: str) -> datetime:
+    try:
+        totime = datetime.strptime(fromtime, "%Y-%m-%dT%H:%M:%S.%f%z")
+    except ValueError:
+        totime = datetime.strptime(fromtime, "%Y-%m-%dT%H:%M:%S%z")
+    return totime
+
+
 class RingGeneric:
     """Generic Implementation for Ring Chime/Doorbell."""
 
@@ -45,6 +53,10 @@ class RingGeneric:
         self.update_health_data()
 
     def update_health_data(self) -> None:
+        """Update the health data."""
+        raise NotImplementedError
+
+    async def async_update_health_data(self) -> None:
         """Update the health data."""
         raise NotImplementedError
 
@@ -166,6 +178,39 @@ class RingGeneric:
         :param older_than: return older objects than the passed event_id
         :param retry: determine the max number of attempts to archive the limit
         """
+        return self._ring.auth._run_async_on_event_loop(
+            self.async_history(
+                limit,
+                timezone,
+                kind,
+                enforce_limit,
+                older_than,
+                retry,
+                convert_timezone=convert_timezone,
+            )
+        )
+
+    async def async_history(
+        self,
+        limit: int = 30,
+        timezone: Optional[str] = None,
+        kind: Optional[str] = None,
+        enforce_limit: bool = False,
+        older_than: Optional[int] = None,
+        retry: int = 8,
+        *,
+        convert_timezone: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return history with datetime objects.
+
+        :param limit: specify number of objects to be returned
+        :param timezone: determine which timezone to convert data objects
+        :param kind: filter by kind (ding, motion, on_demand)
+        :param enforce_limit: when True, this will enforce the limit and kind
+        :param older_than: return older objects than the passed event_id
+        :param retry: determine the max number of attempts to archive the limit
+        """
         if not self.has_capability("history"):
             return []
 
@@ -183,7 +228,8 @@ class RingGeneric:
                 params["older_than"] = older_than
 
             url = URL_DOORBELL_HISTORY.format(self.device_api_id)
-            response = self._ring.query(url, extra_params=params).json()
+            resp = await self._ring.async_query(url, extra_params=params)
+            response = resp.json()
 
             # cherrypick only the selected kind events
             if kind:

@@ -1,4 +1,5 @@
 """Test module which runs the first example in the README."""
+import asyncio
 import getpass
 import json
 from pathlib import Path
@@ -19,34 +20,35 @@ def otp_callback():
     return auth_code
 
 
-def do_auth():
+async def do_auth():
     username = input("Username: ")
     password = getpass.getpass("Password: ")
     auth = Auth(user_agent, None, token_updated)
     try:
-        auth.fetch_token(username, password)
+        await auth.async_fetch_token(username, password)
     except Requires2FAError:
-        auth.fetch_token(username, password, otp_callback())
+        await auth.async_fetch_token(username, password, otp_callback())
     return auth
 
 
-def main():
+async def main():
     if cache_file.is_file():  # auth token is cached
         auth = Auth(user_agent, json.loads(cache_file.read_text()), token_updated)
         ring = Ring(auth)
         try:
-            ring.create_session()  # auth token still valid
+            await ring.async_create_session()  # auth token still valid
         except AuthenticationError:  # auth token has expired
-            auth = do_auth()
+            auth = await do_auth()
     else:
-        auth = do_auth()  # Get new auth token
+        auth = await do_auth()  # Get new auth token
         ring = Ring(auth)
 
-    ring.update_data()
+    await ring.async_update_data()
 
     devices = ring.devices()
-    pprint(devices)
+    pprint(devices.devices_combined)
+    await auth.async_close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
