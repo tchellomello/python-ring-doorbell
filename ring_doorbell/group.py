@@ -2,7 +2,7 @@
 """Python Ring light group wrapper."""
 import logging
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Union
 
 from ring_doorbell.const import (
     GROUP_DEVICES_ENDPOINT,
@@ -97,23 +97,29 @@ class RingLightGroup:
     def lights(self) -> bool:
         """Return lights status."""
         if not self._health_attrs_fetched:
-            self.update()
+            raise RingError(
+                "You need to call update on the "
+                + "group before accessing the lights property."
+            )
         return self._health_attrs["lights_on"]
 
     @lights.setter
     def lights(self, value: Union[bool, Tuple[bool, int]]) -> None:
         """Control the lights."""
-        self._ring.auth._run_async_on_event_loop(self.async_set_lights(value))
-
-    async def async_set_lights(self, value: Union[bool, Tuple[bool, int]]) -> None:
-        """Control the lights."""
-        values = ["True", "False"]
-        state = None
-        duration = None
         if isinstance(value, tuple):
             state, duration = value
+            self._ring.auth._run_async_on_event_loop(
+                self.async_set_lights(state, duration)
+            )
         else:
-            state = value
+            self._ring.auth._run_async_on_event_loop(self.async_set_lights(value))
+
+    async def async_set_lights(
+        self, state: bool, duration: Optional[int] = None
+    ) -> None:
+        """Control the lights."""
+        values = ["True", "False"]
+
         if not isinstance(state, bool):
             raise RingError(MSG_ALLOWED_VALUES.format(", ".join(values)))
 

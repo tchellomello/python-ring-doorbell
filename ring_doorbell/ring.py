@@ -373,5 +373,9 @@ class RingDevices:
         return self._authorized_doorbots
 
     @property
+    def devices_combined(self) -> Mapping[str, Sequence[RingGeneric]]:
+        return {dev_type: self.__getitem__(dev_type) for dev_type in self.__iter__()}
+
+    @property
     def other(self) -> Sequence[RingOther]:
         return self._other

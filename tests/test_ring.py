@@ -136,7 +136,7 @@ async def test_stickup_cam_controls(ring, aioresponses_mock):
     )
 
 
-def test_light_groups(ring):
+async def test_light_groups(ring):
     group = ring.groups()["mock-group-id"]
 
     assert group.name == "Landscape"
@@ -148,20 +148,21 @@ def test_light_groups(ring):
     with pytest.raises(RingError):
         group.has_capability("something-else")
 
-    assert group.lights is False
+    with pytest.raises(
+        RingError,
+        match="You need to call update on the group before accessing the lights property.",
+    ):
+        assert group.lights is False
+    await group.async_update()
 
     # Attempt turning on lights
-    group.lights = True
+    await group.async_set_lights(True)
 
     # Attempt turning off lights
-    group.lights = False
+    await group.async_set_lights(False)
 
     # Attempt turning on lights for 30 seconds
-    group.lights = (True, 30)
-
-    # Attempt setting lights to invalid value
-    with pytest.raises(RingError):
-        group.lights = 30
+    await group.async_set_lights(True, 30)
 
 
 async def test_motion_detection_enable(ring, aioresponses_mock):

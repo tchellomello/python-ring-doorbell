@@ -18,7 +18,7 @@ def json_request_kwargs():
         "headers": {
             "User-Agent": "android:com.ringapp",
             "Content-Type": "application/json",
-            "Authorization": "Bearer eyJ0eWfvEQwqfJNKyQ9999",
+            "Authorization": "Bearer dummyBearerToken",
         },
         "timeout": 10,
         "data": None,
@@ -31,7 +31,7 @@ def nojson_request_kwargs():
     return {
         "headers": {
             "User-Agent": "android:com.ringapp",
-            "Authorization": "Bearer eyJ0eWfvEQwqfJNKyQ9999",
+            "Authorization": "Bearer dummyBearerToken",
         },
         "timeout": 10,
         "data": None,
