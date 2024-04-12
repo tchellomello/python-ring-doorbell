@@ -50,11 +50,14 @@ class RingOther(RingGeneric):
 
     def update_health_data(self) -> None:
         """Update health attrs."""
-        self._health_attrs = (
-            self._ring.query(HEALTH_DOORBELL_ENDPOINT.format(self.device_api_id))
-            .json()
-            .get("device_health", {})
+        self._ring.auth.run_async_on_event_loop(self.async_update_health_data())
+
+    async def async_update_health_data(self) -> None:
+        """Update health attrs."""
+        resp = await self._ring.async_query(
+            HEALTH_DOORBELL_ENDPOINT.format(self.device_api_id)
         )
+        self._health_attrs = resp.json().get("device_health", {})
 
     @property
     def model(self) -> str:
@@ -123,6 +126,11 @@ class RingOther(RingGeneric):
 
     @doorbell_volume.setter
     def doorbell_volume(self, value: int) -> None:
+        """Set the doorbell volume."""
+        self._ring.auth.run_async_on_event_loop(self.async_set_doorbell_volume(value))
+
+    async def async_set_doorbell_volume(self, value: int) -> None:
+        """Set the doorbell volume."""
         if not (
             (isinstance(value, int))
             and (OTHER_DOORBELL_VOL_MIN <= value <= OTHER_DOORBELL_VOL_MAX)
@@ -135,8 +143,8 @@ class RingOther(RingGeneric):
             "doorbot[settings][doorbell_volume]": str(value),
         }
         url = DOORBELLS_ENDPOINT.format(self.device_api_id)
-        self._ring.query(url, extra_params=params, method="PUT")
-        self._ring.update_devices()
+        await self._ring.async_query(url, extra_params=params, method="PUT")
+        await self._ring.async_update_devices()
 
     @property
     def keep_alive_auto(self) -> float | None:
@@ -148,11 +156,15 @@ class RingOther(RingGeneric):
     @keep_alive_auto.setter
     def keep_alive_auto(self, value: float) -> None:
         """Update the keep alive auto setting."""
+        self._ring.auth.run_async_on_event_loop(self.async_set_keep_alive_auto(value))
+
+    async def async_set_keep_alive_auto(self, value: float) -> None:
+        """Update the keep alive auto setting."""
         url = SETTINGS_ENDPOINT.format(self.device_api_id)
         payload = {"keep_alive_settings": {"keep_alive_auto": value}}
 
-        self._ring.query(url, method="PATCH", json=payload)
-        self._ring.update_devices()
+        await self._ring.async_query(url, method="PATCH", json=payload)
+        await self._ring.async_update_devices()
 
     @property
     def mic_volume(self) -> int | None:
@@ -163,14 +175,19 @@ class RingOther(RingGeneric):
 
     @mic_volume.setter
     def mic_volume(self, value: int) -> None:
+        """Set the mic volume."""
+        self._ring.auth.run_async_on_event_loop(self.async_set_mic_volume(value))
+
+    async def async_set_mic_volume(self, value: int) -> None:
+        """Set the mic volume."""
         if not ((isinstance(value, int)) and (MIC_VOL_MIN <= value <= MIC_VOL_MAX)):
             raise RingError(MSG_VOL_OUTBOUND.format(MIC_VOL_MIN, MIC_VOL_MAX))
 
         url = SETTINGS_ENDPOINT.format(self.device_api_id)
         payload = {"volume_settings": {"mic_volume": value}}
 
-        self._ring.query(url, method="PATCH", json=payload)
-        self._ring.update_devices()
+        await self._ring.async_query(url, method="PATCH", json=payload)
+        await self._ring.async_update_devices()
 
     @property
     def voice_volume(self) -> int | None:
@@ -181,38 +198,51 @@ class RingOther(RingGeneric):
 
     @voice_volume.setter
     def voice_volume(self, value: int) -> None:
+        self._ring.auth.run_async_on_event_loop(self.async_set_voice_volume(value))
+
+    async def async_set_voice_volume(self, value: int) -> None:
+        """Set the voice volume."""
         if not ((isinstance(value, int)) and (VOICE_VOL_MIN <= value <= VOICE_VOL_MAX)):
             raise RingError(MSG_VOL_OUTBOUND.format(VOICE_VOL_MIN, VOICE_VOL_MAX))
 
         url = SETTINGS_ENDPOINT.format(self.device_api_id)
         payload = {"volume_settings": {"voice_volume": value}}
 
-        self._ring.query(url, method="PATCH", json=payload)
-        self._ring.update_devices()
+        await self._ring.async_query(url, method="PATCH", json=payload)
+        await self._ring.async_update_devices()
 
     @property
     def clip_length_max(self) -> int | None:
-        """Maximum clip length.
+        """Maximum clip length."""
+        return self._ring.auth.run_async_on_event_loop(self.async_clip_length_max())
+
+    @clip_length_max.setter
+    def clip_length_max(self, value: int) -> None:
+        """Set the maximum clip length.
+
+        This value sets an effective refractory period on consecutive rigns
+        eg if set to default value of 60, rings occuring with 60 seconds of
+        first will not be detected.
+        """
+        self._ring.auth.run_async_on_event_loop(self.async_set_clip_length_max(value))
+
+    async def async_clip_length_max(self) -> int | None:
+        """Get the Maximum clip length."""
+        url = SETTINGS_ENDPOINT.format(self.device_api_id)
+        resp = await self._ring.async_query(url, method="GET")
+        return resp.json().get("video_settings", {}).get("clip_length_max")
+
+    async def async_set_clip_length_max(self, value: int) -> None:
+        """Set the maximum clip length.
 
         This value sets an effective refractory period on consecutive rigns
         eg if set to default value of 60, rings occuring with 60 seconds of
         first will not be detected.
         """
         url = SETTINGS_ENDPOINT.format(self.device_api_id)
-
-        return (
-            self._ring.query(url, method="GET")
-            .json()
-            .get("video_settings", {})
-            .get("clip_length_max")
-        )
-
-    @clip_length_max.setter
-    def clip_length_max(self, value: int) -> None:
-        url = SETTINGS_ENDPOINT.format(self.device_api_id)
         payload = {"video_settings": {"clip_length_max": value}}
-        self._ring.query(url, method="PATCH", json=payload)
-        self._ring.update_devices()
+        await self._ring.async_query(url, method="PATCH", json=payload)
+        await self._ring.async_update_devices()
 
     @property
     def connection_status(self) -> str | None:
@@ -224,13 +254,22 @@ class RingOther(RingGeneric):
     @property
     def allowed_users(self) -> list[dict[str, Any]] | None:
         """Return list of users allowed or invited to access."""
+        return self._ring.auth.run_async_on_event_loop(self.async_allowed_users())
+
+    async def async_allowed_users(self) -> list[dict[str, Any]] | None:
+        """Return list of users allowed or invited to access."""
         if self.kind in INTERCOM_KINDS:
             url = INTERCOM_ALLOWED_USERS.format(self.location_id)
-            return self._ring.query(url, method="GET").json()
+            resp = await self._ring.async_query(url, method="GET")
+            return resp.json()
 
         return None
 
     def open_door(self, user_id: int = -1) -> bool:
+        """Open the door."""
+        return self._ring.auth.run_async_on_event_loop(self.async_open_door(user_id))
+
+    async def async_open_door(self, user_id: int = -1) -> bool:
         """Open the door."""
         if self.kind in INTERCOM_KINDS:
             url = INTERCOM_OPEN_ENDPOINT.format(self.device_api_id)
@@ -250,15 +289,19 @@ class RingOther(RingGeneric):
                     },
                 },
             }
-
-            response = self._ring.query(url, method="PUT", json=payload).json()
-            self._ring.update_devices()
+            resp = await self._ring.async_query(url, method="PUT", json=payload)
+            response = resp.json()
+            await self._ring.async_update_devices()
             if response.get("result", {}).get("code", -1) == 0:
                 return True
 
         return False
 
     def invite_access(self, email: str) -> bool:
+        """Invite user."""
+        return self._ring.auth.run_async_on_event_loop(self.async_invite_access(email))
+
+    async def async_invite_access(self, email: str) -> bool:
         """Invite user."""
         if self.kind in INTERCOM_KINDS:
             url = INTERCOM_INVITATIONS_ENDPOINT.format(self.location_id)
@@ -269,16 +312,22 @@ class RingOther(RingGeneric):
                     "group_ids": [],
                 }
             }
-            self._ring.query(url, method="POST", json=payload)
+            await self._ring.async_query(url, method="POST", json=payload)
             return True
 
         return False
 
     def remove_access(self, user_id: int) -> bool:
         """Remove user access or invitation."""
+        return self._ring.auth.run_async_on_event_loop(
+            self.async_remove_access(user_id)
+        )
+
+    async def async_remove_access(self, user_id: int) -> bool:
+        """Remove user access or invitation."""
         if self.kind in INTERCOM_KINDS:
             url = INTERCOM_INVITATIONS_DELETE_ENDPOINT.format(self.location_id, user_id)
-            self._ring.query(url, method="DELETE")
+            await self._ring.async_query(url, method="DELETE")
             return True
 
         return False

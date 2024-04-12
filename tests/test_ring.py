@@ -1,7 +1,12 @@
 """The tests for the Ring platform."""
 
+import asyncio
+
 import pytest
-from ring_doorbell import RingError
+from ring_doorbell import Auth, Ring, RingError
+from ring_doorbell.const import USER_AGENT
+
+from .conftest import json_request_kwargs, load_fixture_as_dict, nojson_request_kwargs
 
 
 def test_basic_attributes(ring):
@@ -98,24 +103,39 @@ def test_stickup_cam_attributes(ring):
     assert dev.siren == 0
 
 
-def test_stickup_cam_controls(ring, requests_mock):
+async def test_stickup_cam_controls(ring, aioresponses_mock):
     dev = ring.devices()["stickup_cams"][0]
 
-    dev.lights = "off"
-    dev.lights = "on"
-    dev.siren = 0
-    dev.siren = 30
+    kwargs = nojson_request_kwargs()
 
-    history = list(filter(lambda x: x.method == "PUT", requests_mock.request_history))
-    assert history[0].path == "/clients_api/doorbots/987652/floodlight_light_off"
-    assert history[1].path == "/clients_api/doorbots/987652/floodlight_light_on"
-    assert history[2].path == "/clients_api/doorbots/987652/siren_off"
-    assert "duration" not in history[2].qs
-    assert history[3].path == "/clients_api/doorbots/987652/siren_on"
-    assert history[3].qs["duration"][0] == "30"
+    await dev.async_set_lights("off")
+    aioresponses_mock.assert_called_with(
+        url="https://api.ring.com/clients_api/doorbots/987652/floodlight_light_off",
+        method="PUT",
+        **kwargs,
+    )
+    await dev.async_set_lights("on")
+    aioresponses_mock.assert_called_with(
+        url="https://api.ring.com/clients_api/doorbots/987652/floodlight_light_on",
+        method="PUT",
+        **kwargs,
+    )
+    await dev.async_set_siren(0)
+    aioresponses_mock.assert_called_with(
+        url="https://api.ring.com/clients_api/doorbots/987652/siren_off",
+        method="PUT",
+        **kwargs,
+    )
+    await dev.async_set_siren(30)
+    kwargs["params"] = {"duration": 30}
+    aioresponses_mock.assert_called_with(
+        url="https://api.ring.com/clients_api/doorbots/987652/siren_on",
+        method="PUT",
+        **kwargs,
+    )
 
 
-def test_light_groups(ring):
+async def test_light_groups(ring):
     group = ring.groups()["mock-group-id"]
 
     assert group.name == "Landscape"
@@ -127,41 +147,108 @@ def test_light_groups(ring):
     with pytest.raises(RingError):
         group.has_capability("something-else")
 
-    assert group.lights is False
+    with pytest.raises(
+        RingError,
+        match=(
+            "You need to call update on the group before "
+            "accessing the lights property."
+        ),
+    ):
+        assert group.lights is False
+    await group.async_update()
 
     # Attempt turning on lights
-    group.lights = True
+    await group.async_set_lights(state=True)
 
     # Attempt turning off lights
-    group.lights = False
+    await group.async_set_lights(state=False)
 
     # Attempt turning on lights for 30 seconds
-    group.lights = (True, 30)
-
-    # Attempt setting lights to invalid value
-    with pytest.raises(RingError):
-        group.lights = 30
+    await group.async_set_lights(state=True, duration=30)
 
 
-def test_motion_detection_enable(ring, requests_mock):
+async def test_motion_detection_enable(ring, aioresponses_mock):
     dev = ring.devices()["doorbots"][0]
 
-    dev.motion_detection = True
-    dev.motion_detection = False
-
-    history = list(filter(lambda x: x.method == "PATCH", requests_mock.request_history))
-    assert history[len(history) - 2].path == "/devices/v1/devices/987652/settings"
-    assert (
-        history[len(history) - 2].text
-        == '{"motion_settings": {"motion_detection_enabled": true}}'
-    )
-    assert history[len(history) - 1].path == "/devices/v1/devices/987652/settings"
-    assert (
-        history[len(history) - 1].text
-        == '{"motion_settings": {"motion_detection_enabled": false}}'
+    kwargs = json_request_kwargs()
+    await dev.async_set_motion_detection(state=True)
+    kwargs["json"] = {"motion_settings": {"motion_detection_enabled": True}}
+    aioresponses_mock.assert_called_with(
+        url="https://api.ring.com/devices/v1/devices/987652/settings",
+        method="PATCH",
+        **kwargs,
     )
 
-    active_dings = ring.active_alerts()
+    await dev.async_set_motion_detection(state=False)
 
-    assert len(active_dings) == 3
-    assert len(ring.active_alerts()) == 3
+    kwargs["json"] = {"motion_settings": {"motion_detection_enabled": False}}
+    aioresponses_mock.assert_called_with(
+        url="https://api.ring.com/devices/v1/devices/987652/settings",
+        method="PATCH",
+        **kwargs,
+    )
+
+
+async def test_sync_queries_from_event_loop():
+    auth = Auth(USER_AGENT, token=load_fixture_as_dict("ring_oauth.json"))
+    ring = Ring(auth)
+
+    loop = asyncio.get_running_loop()
+
+    # This will run on the background thread
+    ring.update_devices()
+    assert auth._loop is not None
+    assert auth._init_loop == loop
+    assert auth._loop == auth._background_thread_loop
+
+    auth.close()
+
+
+async def test_sync_queries_from_executor():
+    auth = Auth(USER_AGENT, token=load_fixture_as_dict("ring_oauth.json"))
+    ring = Ring(auth)
+
+    loop = asyncio.get_running_loop()
+    assert auth._init_loop == loop
+
+    # This will run the query on this loop
+    await loop.run_in_executor(None, ring.update_devices)
+
+    assert auth._loop == loop
+    assert auth._loop != auth._background_thread_loop
+    assert auth._loop == auth._init_loop
+    await loop.run_in_executor(None, auth.close)
+
+
+async def test_sync_queries_event_loop_change():
+    auth = Auth(USER_AGENT, token=load_fixture_as_dict("ring_oauth.json"))
+
+    ring = Ring(auth)
+    loop = asyncio.get_running_loop()
+    assert auth._loop is None
+
+    await ring.async_update_devices()
+    assert auth._loop == loop
+
+    assert auth._background_thread_loop is None
+
+    with pytest.raises(
+        RingError, match="Detected event loop change, don't mix sync and async calls."
+    ):
+        ring.update_devices()
+
+    await auth.async_close()
+
+
+def test_sync_queries_with_no_event_loop():
+    auth = Auth(USER_AGENT, token=load_fixture_as_dict("ring_oauth.json"))
+
+    ring = Ring(auth)
+
+    assert auth._loop is None
+
+    ring.update_devices()
+
+    assert auth._background_thread_loop is None
+
+    auth.close()

@@ -104,12 +104,24 @@ The CLI is work in progress and currently has the following commands:
 
 #.  Run ``ring-doorbell --help`` or ``ring-doorbell videos --help`` for full options
 
+Using the API
+-------------
+
+The API has an async interface and a sync interface.  All api calls starting `async` are
+asynchronous.  This is the preferred method of interacting with the ring api and the sync
+versions are maintained for backwards compatability.
+
+*You cannot mix sync and async code*
+
 Initializing your Ring object
------------------------------
++++++++++++++++++++++++++++++
+
+This code example is in the `test.py <test.py>`_ file.  For a sync example see `test_sync.py <test_sync.py>`_.
 
 .. code-block:: python
 
     import getpass
+    import asyncio
     import json
     from pathlib import Path
 
@@ -128,42 +140,47 @@ Initializing your Ring object
         return auth_code
 
 
-    def do_auth():
+    async def do_auth():
         username = input("Username: ")
         password = getpass.getpass("Password: ")
         auth = Auth(user_agent, None, token_updated)
         try:
-            auth.fetch_token(username, password)
+            await auth.async_fetch_token(username, password)
         except Requires2FAError:
-            auth.fetch_token(username, password, otp_callback())
+            await auth.async_fetch_token(username, password, otp_callback())
         return auth
 
 
-    def main():
+    async def main():
         if cache_file.is_file():  # auth token is cached
             auth = Auth(user_agent, json.loads(cache_file.read_text()), token_updated)
             ring = Ring(auth)
             try:
-                ring.create_session()  # auth token still valid
+                await ring.async_create_session()  # auth token still valid
             except AuthenticationError:  # auth token has expired
-                auth = do_auth()
+                auth = await do_auth()
         else:
-            auth = do_auth()  # Get new auth token
+            auth = await do_auth()  # Get new auth token
             ring = Ring(auth)
 
-        ring.update_data()
+        await ring.async_update_data()
 
         devices = ring.devices()
+<<<<<<< HEAD
         print(devices)
+=======
+        pprint(devices.devices_combined)
+        await auth.async_close()
+>>>>>>> 4796d3a (Make library fully async)
 
 
     if __name__ == "__main__":
-        main()
+        asyncio.run(main())
+
 
 
 Listing devices linked to your account
---------------------------------------
-
+++++++++++++++++++++++++++++++++++++++
 .. code-block:: python
 
     # All devices
@@ -184,12 +201,12 @@ Listing devices linked to your account
     [<RingStickUpCam: Driveway>]
 
 Playing with the attributes and functions
------------------------------------------
++++++++++++++++++++++++++++++++++++++++++
 .. code-block:: python
 
     devices = ring.devices()
     for dev in list(devices['stickup_cams'] + devices['chimes'] + devices['doorbots']):
-        dev.update_health_data()
+        await dev.async_update_health_data()
         print('Address:    %s' % dev.address)
         print('Family:     %s' % dev.family)
         print('ID:         %s' % dev.id)
@@ -200,28 +217,28 @@ Playing with the attributes and functions
 
         # setting dev volume
         print('Volume:     %s' % dev.volume)
-        dev.volume = 5
+        await dev.async_set_volume(5)
         print('Volume:     %s' % dev.volume)
 
         # play dev test shound
         if dev.family == 'chimes':
-            dev.test_sound(kind = 'ding')
-            dev.test_sound(kind = 'motion')
+            await dev.async_test_sound(kind = 'ding')
+            await dev.async_test_sound(kind = 'motion')
 
         # turn on lights on floodlight cam
         if dev.family == 'stickup_cams' and dev.lights:
-            dev.lights = 'on'
+            await dev.async_lights('on')
 
 
 Showing door bell events
-------------------------
+++++++++++++++++++++++++
 .. code-block:: python
 
     devices = ring.devices()
     for doorbell in devices['doorbots']:
 
         # listing the last 15 events of any kind
-        for event in doorbell.history(limit=15):
+        for event in await doorbell.async_history(limit=15):
             print('ID:       %s' % event['id'])
             print('Kind:     %s' % event['kind'])
             print('Answered: %s' % event['answered'])
@@ -229,30 +246,30 @@ Showing door bell events
             print('--' * 50)
 
         # get a event list only the triggered by motion
-        events = doorbell.history(kind='motion')
+        events = await doorbell.async_history(kind='motion')
 
 
 Downloading the last video triggered by a ding or motion event
---------------------------------------------------------------
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 .. code-block:: python
 
     devices = ring.devices()
     doorbell = devices['doorbots'][0]
-    doorbell.recording_download(
-        doorbell.history(limit=100, kind='ding')[0]['id'],
+    await doorbell.async_recording_download(
+        await doorbell.async_history(limit=100, kind='ding')[0]['id'],
                          filename='last_ding.mp4',
                          override=True)
 
 
 Displaying the last video capture URL
--------------------------------------
++++++++++++++++++++++++++++++++++++++
 .. code-block:: python
 
-    print(doorbell.recording_url(doorbell.last_recording_id))
+    print(await doorbell.async_recording_url(await doorbell.async_last_recording_id()))
     'https://ring-transcoded-videos.s3.amazonaws.com/99999999.mp4?X-Amz-Expires=3600&X-Amz-Date=20170313T232537Z&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=TOKEN_SECRET/us-east-1/s3/aws4_request&X-Amz-SignedHeaders=host&X-Amz-Signature=secret'
 
 Controlling a Light Group
--------------------------
++++++++++++++++++++++++++
 .. code-block:: python
 
     groups = ring.groups()
@@ -262,13 +279,13 @@ Controlling a Light Group
     # Prints True if lights are on, False if off
 
     # Turn on lights indefinitely
-    group.lights = True
+    await group.async_set_lights(True)
 
     # Turn off lights
-    group.lights = False
+    await group.async_set_lights(False)
 
     # Turn on lights for 30 seconds
-    group.lights = (True, 30)
+    await group.async_set_lights(True, 30)
 
 How to contribute
 -----------------
