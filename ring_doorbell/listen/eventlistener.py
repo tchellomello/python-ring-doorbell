@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Dict
 
 from firebase_messaging import FcmPushClient
@@ -203,9 +203,16 @@ class RingEventListener:
             state = subtype
 
         created_at = ding["created_at"]
-        create_seconds = (
-            datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S.%f%z")
-        ).timestamp()
+        # Check if the datetime string contains a period which precedes 'Z', indicating microseconds
+        if '.' in created_at and created_at.endswith('Z'):
+            # String contains microseconds and ends with 'Z'
+            format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
+        else:
+            # String does not contain microseconds and ends with 'Z'
+            format_str = "%Y-%m-%dT%H:%M:%SZ"
+
+        # Parse the datetime string using the appropriate format
+        create_seconds = datetime.strptime(created_at, format_str).replace(tzinfo=timezone.utc).timestamp()
         return RingEvent(
             id=ding["id"],
             kind=kind,
