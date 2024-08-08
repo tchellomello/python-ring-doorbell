@@ -22,5 +22,6 @@ repos:
           scripts/.*|
           docs/.*|
           tests/.*|
-          test\.py
+          test\.py$ |
+          test_sync\.py$
       )$

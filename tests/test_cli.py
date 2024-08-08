@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import DEFAULT
+from unittest.mock import DEFAULT, MagicMock, call, patch
 
+import aiofiles
 import pytest
 from asyncclick.testing import CliRunner
 from ring_doorbell import AuthenticationError, Requires2FAError, Ring
@@ -23,7 +24,7 @@ from ring_doorbell.cli import (
 from ring_doorbell.const import GCM_TOKEN_FILE
 from ring_doorbell.listen import can_listen
 
-from tests.conftest import load_fixture
+from tests.conftest import load_fixture, load_fixture_as_dict
 
 
 async def test_cli_default(ring):
@@ -92,14 +93,21 @@ async def test_list(ring):
         assert expected in res.output
 
 
+aiofiles.threadpool.wrap.register(MagicMock)(
+    lambda *args, **kwargs: aiofiles.threadpool.AsyncBufferedIOBase(*args, **kwargs)
+)
+
+
 async def test_videos(ring, mocker):
     runner = CliRunner()
-
+    mock_file_stream = MagicMock(read=lambda *args, **kwargs: b"")  # noqa: ARG005
     with runner.isolated_filesystem():
-        m = mocker.mock_open()
-        ptch = mocker.patch("pathlib.Path.open", m, create=True)
-        res = await runner.invoke(videos, ["--count", "--download-all"], obj=ring)
-        assert ptch.mock_calls[2].args[0] == b"123456"
+        with patch(
+            "aiofiles.threadpool.sync_open", return_value=mock_file_stream
+        ) as mock_open:
+            res = await runner.invoke(videos, ["--count", "--download-all"], obj=ring)
+        assert mock_open.call_count == 3
+        mock_file_stream.write.assert_has_calls([call(b"123456")] * 3)
         assert "Downloading 3 videos" in res.output
 
 
@@ -128,6 +136,19 @@ async def test_auth(mocker, affect_method, exception, file_exists):
 
         return DEFAULT
 
+    def _add_token(
+        uri,
+        http_method,
+        body,
+        headers,
+        token_placement=None,
+        **kwargs,  # noqa: ANN003
+    ) -> tuple[str, dict, bytes]:
+        return uri, headers, body
+
+    mocker.patch(
+        "oauthlib.oauth2.LegacyApplicationClient.add_token", side_effect=_add_token
+    )
     mocker.patch.object(Path, "is_file", return_value=file_exists)
     mocker.patch.object(Path, "read_text", return_value=load_fixture("ring_oauth.json"))
     mocker.patch("builtins.input", return_value="Foo")
@@ -142,7 +163,7 @@ async def test_auth(mocker, affect_method, exception, file_exists):
         assert res.exit_code == 0
 
 
-async def test_motion_detection(ring, requests_mock):
+async def test_motion_detection(ring, aioresponses_mock, devices_fixture):
     runner = CliRunner()
     with runner.isolated_filesystem():
         res = await runner.invoke(
@@ -164,9 +185,10 @@ async def test_motion_detection(ring, requests_mock):
         assert expected in res.output
 
         # Changes the return to indicate that the siren is now on.
-        requests_mock.get(
+        devices_fixture.updated = True
+        aioresponses_mock.get(
             "https://api.ring.com/clients_api/ring_devices",
-            text=load_fixture("ring_devices_updated.json"),
+            payload=load_fixture_as_dict("ring_devices_updated.json"),
         )
 
         res = await runner.invoke(
@@ -191,10 +213,12 @@ async def test_listen_store_credentials(mocker, auth):
 
     with runner.isolated_filesystem():
         mocker.patch(
-            "firebase_messaging.fcmpushclient.gcm_check_in", return_value="foobar"
+            "firebase_messaging.fcmregister.FcmRegister.gcm_check_in",
+            return_value="foobar",
         )
         mocker.patch(
-            "firebase_messaging.FcmPushClient.register", return_value=credentials
+            "firebase_messaging.fcmregister.FcmRegister.register",
+            return_value=credentials,
         )
         mocker.patch("firebase_messaging.FcmPushClient.start")
         mocker.patch("firebase_messaging.FcmPushClient.is_started", return_value=True)
@@ -204,14 +228,14 @@ async def test_listen_store_credentials(mocker, auth):
 
         await runner.invoke(listen, ["--store-credentials"], obj=ring)
         assert Path(GCM_TOKEN_FILE).is_file()
-        assert firebase_messaging.fcmpushclient.gcm_check_in.call_count == 0
-        assert firebase_messaging.FcmPushClient.register.call_count == 1
+        assert firebase_messaging.fcmregister.FcmRegister.gcm_check_in.call_count == 0
+        assert firebase_messaging.fcmregister.FcmRegister.register.call_count == 1
         assert firebase_messaging.FcmPushClient.start.call_count == 1
 
         ring = Ring(auth)
         await runner.invoke(listen, ["--store-credentials"], obj=ring)
-        assert firebase_messaging.fcmpushclient.gcm_check_in.call_count == 1
-        assert firebase_messaging.FcmPushClient.register.call_count == 1
+        assert firebase_messaging.fcmregister.FcmRegister.gcm_check_in.call_count == 1
+        assert firebase_messaging.fcmregister.FcmRegister.register.call_count == 1
         assert firebase_messaging.FcmPushClient.start.call_count == 2
 
 
@@ -223,7 +247,7 @@ async def test_listen_event_handler(mocker, auth):
 
     ring = Ring(auth)
     listener = RingEventListener(ring)
-    listener.start()
+    await listener.async_start()
     listener.add_notification_callback(_event_handler(ring).on_event)
 
     msg = json.loads(load_fixture("ring_listen_fcmdata.json"))

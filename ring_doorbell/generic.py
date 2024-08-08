@@ -51,6 +51,10 @@ class RingGeneric:
         """Update the health data."""
         raise NotImplementedError
 
+    async def async_update_health_data(self) -> None:
+        """Update the health data."""
+        raise NotImplementedError
+
     @property
     def _attrs(self) -> dict[str, Any]:
         """Return attributes."""
@@ -158,7 +162,40 @@ class RingGeneric:
         """Return the result of the last history query."""
         return self._last_history
 
-    def history(  # noqa: C901, PLR0912, PLR0913
+    def history(  # noqa: PLR0913
+        self,
+        *,
+        limit: int = 30,
+        timezone: str | None = None,
+        kind: str | None = None,
+        enforce_limit: bool = False,
+        older_than: int | None = None,
+        retry: int = 8,
+        convert_timezone: bool = True,
+    ) -> list[dict[str, Any]]:
+        """
+        Return history with datetime objects.
+
+        :param limit: specify number of objects to be returned
+        :param timezone: determine which timezone to convert data objects
+        :param kind: filter by kind (ding, motion, on_demand)
+        :param enforce_limit: when True, this will enforce the limit and kind
+        :param older_than: return older objects than the passed event_id
+        :param retry: determine the max number of attempts to archive the limit
+        """
+        return self._ring.auth.run_async_on_event_loop(
+            self.async_history(
+                limit=limit,
+                timezone=timezone,
+                kind=kind,
+                enforce_limit=enforce_limit,
+                older_than=older_than,
+                retry=retry,
+                convert_timezone=convert_timezone,
+            )
+        )
+
+    async def async_history(  # noqa: C901, PLR0913, PLR0912
         self,
         *,
         limit: int = 30,
@@ -196,7 +233,8 @@ class RingGeneric:
                 params["older_than"] = older_than
 
             url = URL_DOORBELL_HISTORY.format(self.device_api_id)
-            response = self._ring.query(url, extra_params=params).json()
+            resp = await self._ring.async_query(url, extra_params=params)
+            response = resp.json()
 
             # cherrypick only the selected kind events
             if kind:
