@@ -2,10 +2,11 @@
 
 import asyncio
 from datetime import datetime, timezone
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from freezegun.api import FrozenDateTimeFactory
-from ring_doorbell import Auth, Ring, RingError
+from ring_doorbell import Auth, Ring, RingError, RingStickUpCam
 from ring_doorbell.const import MSG_EXISTING_TYPE, USER_AGENT
 from ring_doorbell.util import parse_datetime
 
@@ -111,6 +112,41 @@ def test_stickup_cam_attributes(ring):
     assert dev.has_capability("history") is True
     assert dev.lights == "off"
     assert dev.siren == 0
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_model", "battery", "light", "siren"),
+    [
+        # Newer Ring camera kinds (#525) added to their existing device-kind
+        # families so they classify correctly instead of falling through to the
+        # generic profile and logging "Unknown kind".
+        ("cocoa_floodlight_v2", "Floodlight Cam Plus", False, True, True),
+        ("cocoa_camera_v3", "Stick Up Cam (3rd Gen)", True, False, True),
+        ("stickup_cam_mini_v3", "Indoor Cam (2nd Gen)", False, False, True),
+    ],
+)
+def test_newer_stickup_cam_kinds_recognized(
+    kind, expected_model, battery, light, siren
+):
+    """Each newer kind must map to its family's model + capabilities.
+
+    model/has_capability read only ``self.kind`` for these families, so patching
+    that one property pins the classification without the network fixtures — in
+    particular that model() never returns the "Unknown Stickup Cam" fallback.
+    """
+    cam = RingStickUpCam.__new__(RingStickUpCam)
+    with patch.object(
+        RingStickUpCam, "kind", new_callable=PropertyMock, return_value=kind
+    ):
+        assert cam.kind == kind
+        assert cam.model == expected_model
+        assert cam.model != "Unknown Stickup Cam"
+        assert cam.has_capability("battery") is battery
+        assert cam.has_capability("light") is light
+        assert cam.has_capability("siren") is siren
+        # all of these are cameras → video/motion + history are always present
+        assert cam.has_capability("motion_detection") is True
+        assert cam.has_capability("history") is True
 
 
 async def test_stickup_cam_controls(ring, aioresponses_mock):
