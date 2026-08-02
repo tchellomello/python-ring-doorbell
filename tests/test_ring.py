@@ -113,6 +113,36 @@ def test_stickup_cam_attributes(ring):
     assert dev.siren == 0
 
 
+def test_outdoor_cam_plus_battery_attributes(ring):
+    dev = ring.devices()["stickup_cams"][0]
+    dev._attrs["kind"] = "cocoa_camera_v2"
+    dev._attrs["battery_life"] = 76
+    dev._attrs["health"] = {"battery_present": True}
+
+    assert dev.model == "Outdoor Cam Plus"
+    assert dev.has_capability("battery") is True
+    assert dev.has_capability("light") is False
+    assert dev.has_capability("history") is True
+    assert dev.has_capability("motion_detection") is True
+    assert dev.has_capability("siren") is True
+    assert dev.has_capability("video") is True
+
+
+def test_outdoor_cam_plus_powered_attributes(ring):
+    dev = ring.devices()["stickup_cams"][0]
+    dev._attrs["kind"] = "cocoa_camera_v2"
+    dev._attrs["battery_life"] = None
+    dev._attrs["health"] = {"battery_present": False}
+
+    assert dev.model == "Outdoor Cam Plus"
+    assert dev.has_capability("battery") is False
+    assert dev.has_capability("light") is False
+    assert dev.has_capability("history") is True
+    assert dev.has_capability("motion_detection") is True
+    assert dev.has_capability("siren") is True
+    assert dev.has_capability("video") is True
+
+
 async def test_stickup_cam_controls(ring, aioresponses_mock):
     dev = ring.devices()["stickup_cams"][0]
 
