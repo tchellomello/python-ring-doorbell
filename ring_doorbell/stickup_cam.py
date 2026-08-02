@@ -16,6 +16,7 @@ from ring_doorbell.const import (
     LIGHTS_ENDPOINT,
     MSG_ALLOWED_VALUES,
     MSG_VOL_OUTBOUND,
+    OUTDOOR_CAM_PLUS_KINDS,
     SIREN_DURATION_MAX,
     SIREN_DURATION_MIN,
     SIREN_ENDPOINT,
@@ -38,6 +39,12 @@ _LOGGER = logging.getLogger(__name__)
 class RingStickUpCam(RingDoorBell):
     """Implementation for RingStickUpCam."""
 
+    def _outdoor_cam_plus_has_battery(self) -> bool:
+        """Return if an Outdoor Cam Plus reports a battery."""
+        if "battery_present" in self._attrs.get("health", {}):
+            return bool(self._attrs["health"]["battery_present"])
+        return self.battery_life is not None
+
     @property
     def family(self) -> str:
         """Return Ring device family type."""
@@ -58,6 +65,8 @@ class RingStickUpCam(RingDoorBell):
             return "Indoor Cam (2nd Gen)"
         if self.kind in INDOOR_CAM_PTZ_KINDS:
             return "Pan-Tilt Indoor Cam"
+        if self.kind in OUTDOOR_CAM_PLUS_KINDS:
+            return "Outdoor Cam Plus"
         if self.kind in SPOTLIGHT_CAM_BATTERY_KINDS:
             return "Spotlight Cam {}".format(
                 self._attrs.get("ring_cam_setup_flow", "battery").title()
@@ -91,11 +100,17 @@ class RingStickUpCam(RingDoorBell):
         if capability == RingCapability.HISTORY:
             return True
         if capability == RingCapability.BATTERY:
-            return self.kind in (
-                SPOTLIGHT_CAM_BATTERY_KINDS
-                + STICKUP_CAM_KINDS
-                + STICKUP_CAM_BATTERY_KINDS
-                + STICKUP_CAM_GEN3_KINDS
+            return (
+                self.kind in OUTDOOR_CAM_PLUS_KINDS
+                and self._outdoor_cam_plus_has_battery()
+            ) or (
+                self.kind
+                in (
+                    SPOTLIGHT_CAM_BATTERY_KINDS
+                    + STICKUP_CAM_KINDS
+                    + STICKUP_CAM_BATTERY_KINDS
+                    + STICKUP_CAM_GEN3_KINDS
+                )
             )
         if capability == RingCapability.LIGHT:
             return self.kind in (
@@ -115,6 +130,7 @@ class RingStickUpCam(RingDoorBell):
                 + INDOOR_CAM_KINDS
                 + INDOOR_CAM_GEN2_KINDS
                 + INDOOR_CAM_PTZ_KINDS
+                + OUTDOOR_CAM_PLUS_KINDS
                 + SPOTLIGHT_CAM_BATTERY_KINDS
                 + SPOTLIGHT_CAM_WIRED_KINDS
                 + SPOTLIGHT_CAM_PLUS_KINDS
@@ -131,6 +147,7 @@ class RingStickUpCam(RingDoorBell):
                 + INDOOR_CAM_KINDS
                 + INDOOR_CAM_GEN2_KINDS
                 + INDOOR_CAM_PTZ_KINDS
+                + OUTDOOR_CAM_PLUS_KINDS
                 + SPOTLIGHT_CAM_BATTERY_KINDS
                 + SPOTLIGHT_CAM_WIRED_KINDS
                 + SPOTLIGHT_CAM_PLUS_KINDS
