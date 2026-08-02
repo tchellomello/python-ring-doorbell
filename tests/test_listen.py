@@ -74,6 +74,27 @@ async def test_active_dings(auth, mocker):
     await listener.stop()
 
 
+def test_notification_without_ding_id(auth):
+    """Test notifications without a Ring event ID are still processed."""
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+    received_events = []
+    listener.add_notification_callback(received_events.append)
+
+    msg = load_alert_v2("camera_motion", 123456782)
+    data = json.loads(msg["data"]["data"])
+    del data["event"]["ding"]["id"]
+    msg["data"]["data"] = json.dumps(data)
+
+    listener._on_notification(msg, "1234567")
+    listener._on_notification(msg, "1234568")
+
+    assert received_events[0].id > 0
+    assert received_events[1].id == received_events[0].id
+    assert received_events[0].is_update is False
+    assert received_events[1].is_update is True
+
+
 async def test_ding_expirey(auth, mocker, freezer: FrozenDateTimeFactory):
     ring = Ring(auth)
     listener = RingEventListener(ring)
