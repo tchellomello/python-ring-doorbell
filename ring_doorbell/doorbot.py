@@ -30,6 +30,7 @@ from ring_doorbell.const import (
     DOORBELL_VOL_MAX,
     DOORBELL_VOL_MIN,
     DOORBELL_WIRED_KINDS,
+    DOORBELL_WIRED_PLUS_2_KINDS,
     DOORBELLS_ENDPOINT,
     FILE_EXISTS,
     HEALTH_DOORBELL_ENDPOINT,
@@ -80,7 +81,7 @@ class RingDoorBell(RingGeneric):
         self._health_attrs = resp.json().get("device_health", {})
 
     @property
-    def model(self) -> str:  # noqa: C901, PLR0911
+    def model(self) -> str:  # noqa: C901, PLR0911, PLR0912
         """Return Ring device model name."""
         if self.kind in DOORBELL_KINDS:
             return "Doorbell"
@@ -100,6 +101,8 @@ class RingDoorBell(RingGeneric):
             return "Doorbell Elite"
         if self.kind in DOORBELL_WIRED_KINDS:
             return "Doorbell Wired"
+        if self.kind in DOORBELL_WIRED_PLUS_2_KINDS:
+            return "Wired Doorbell Plus (2nd Gen)"
         if self.kind in DOORBELL_BATTERY_KINDS:
             return "Battery Doorbell"
         if self.kind in DOORBELL_GEN2_KINDS:
@@ -129,7 +132,7 @@ class RingDoorBell(RingGeneric):
         if capability == RingCapability.KNOCK:
             return self.kind in PEEPHOLE_CAM_KINDS
         if capability == RingCapability.PRE_ROLL:
-            return self.kind in DOORBELL_3_PLUS_KINDS
+            return self.kind in (DOORBELL_3_PLUS_KINDS + DOORBELL_WIRED_PLUS_2_KINDS)
         if capability == RingCapability.VOLUME:
             return True
         if capability == RingCapability.HISTORY:
@@ -148,6 +151,7 @@ class RingDoorBell(RingGeneric):
                 + DOORBELL_PRO_KINDS
                 + DOORBELL_PRO_2_KINDS
                 + DOORBELL_WIRED_KINDS
+                + DOORBELL_WIRED_PLUS_2_KINDS
                 + DOORBELL_BATTERY_KINDS
                 + DOORBELL_GEN2_KINDS
                 + DOORBELL_ELITE_KINDS
