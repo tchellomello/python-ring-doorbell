@@ -320,9 +320,16 @@ class RingEventListener:
         event_kind = PUSH_NOTIFICATION_KINDS.get(event_category, "Unknown")
         device = data["device"]
         event = data["event"]
-        event_id = int(event["ding"]["id"])
-        created_at = event["ding"]["created_at"]
+        ding = event["ding"]
+        created_at = ding["created_at"]
         create_seconds = parse_datetime(created_at).timestamp()
+        # Some FCM payloads omit ding.id; created_at remains stable across updates.
+        event_id_value = ding.get("id")
+        event_id = (
+            int(event_id_value)
+            if event_id_value is not None
+            else int(create_seconds * 1000)
+        )
         return RingEvent(
             event_id,
             device["id"],
@@ -331,7 +338,7 @@ class RingEventListener:
             kind=event_kind,
             now=create_seconds,
             expires_in=DEFAULT_LISTEN_EVENT_EXPIRES_IN,
-            state=event["ding"]["subtype"],
+            state=ding["subtype"],
         )
 
     def _get_legacy_ring_event(self, gcm_data: dict) -> RingEvent | None:
