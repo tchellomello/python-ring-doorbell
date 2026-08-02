@@ -84,6 +84,27 @@ async def test_doorbell_attributes(ring):
     assert dev.wifi_signal_strength == -58
 
 
+def test_wired_doorbell_plus_2_attributes(ring):
+    dev = ring.devices()["doorbots"][0]
+    dev._attrs["kind"] = "cocoa_doorbell_v4w"
+    dev._attrs["battery_life"] = None
+    dev._attrs["external_connection"] = True
+    dev._attrs["health"] = {"ac_power": 1}
+    dev._attrs["settings"]["preroll_enabled"] = True
+    dev._attrs["settings"]["power_mode"] = "wired"
+
+    assert dev.model == "Wired Doorbell Plus (2nd Gen)"
+    assert dev.battery_life is None
+    assert dev.has_capability("battery") is False
+    assert dev.has_capability("ding") is True
+    assert dev.has_capability("history") is True
+    assert dev.has_capability("knock") is False
+    assert dev.has_capability("motion_detection") is True
+    assert dev.has_capability("pre_roll") is True
+    assert dev.has_capability("video") is True
+    assert dev.has_capability("volume") is True
+
+
 def test_shared_doorbell_attributes(ring):
     data = ring.devices()
     dev = data["authorized_doorbots"][0]
