@@ -9,7 +9,7 @@ from functools import cached_property
 from json import loads as json_loads
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
-from aiohttp import BasicAuth, ClientError, ClientResponseError, ClientSession
+from aiohttp import ClientError, ClientResponseError, ClientSession, encode_basic_auth
 from oauthlib.common import urldecode
 from oauthlib.oauth2 import (
     LegacyApplicationClient,
@@ -65,7 +65,7 @@ class Auth:
         self._oauth_client = LegacyApplicationClient(
             client_id=OAuth.CLIENT_ID, token=token
         )
-        self._auth = BasicAuth(OAuth.CLIENT_ID, "")
+        self._auth_header = encode_basic_auth(OAuth.CLIENT_ID)
 
     @property
     def _session(self) -> ClientSession:
@@ -84,7 +84,11 @@ class Auth:
         :type password: str
         :type otp_code: str.
         """
-        headers = {"User-Agent": self.user_agent, "hardware_id": self.hardware_id}
+        headers = {
+            "User-Agent": self.user_agent,
+            "hardware_id": self.hardware_id,
+            "Authorization": self._auth_header,
+        }
 
         if otp_code:
             headers["2fa-support"] = "true"
@@ -100,7 +104,6 @@ class Auth:
                 OAuth.ENDPOINT,
                 data=data,
                 headers=headers,
-                auth=self._auth,
             )
             async with resp:
                 text = await resp.text()
@@ -123,13 +126,14 @@ class Auth:
             headers = {
                 "Accept": "application/json",
                 "Content-Type": ("application/x-www-form-urlencoded;charset=UTF-8"),
+                "Authorization": self._auth_header,
             }
             body = self._oauth_client.prepare_refresh_body(
                 refresh_token=self._token["refresh_token"]
             )
             data = dict(urldecode(body))
             resp = await self._session.request(
-                "POST", OAuth.ENDPOINT, data=data, headers=headers, auth=self._auth
+                "POST", OAuth.ENDPOINT, data=data, headers=headers
             )
             async with resp:
                 text = await resp.text()

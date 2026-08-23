@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
-from aioresponses import CallbackResult, aioresponses
+from aiointercept import CallbackResult, aiointercept
 from ring_doorbell import Auth, Ring
 from ring_doorbell.const import USER_AGENT
 
@@ -28,7 +28,6 @@ def json_request_kwargs():
             "Content-Type": "application/json",
             "Authorization": "Bearer dummyBearerToken",
         },
-        "timeout": 10,
         "data": None,
         "params": {},
         "json": {},
@@ -42,7 +41,6 @@ def nojson_request_kwargs():
             "hardware_id": "21ac3af1-0eac-5fbd-8b0f-0b784889bfbd",
             "Authorization": "Bearer dummyBearerToken",
         },
-        "timeout": 10,
         "data": None,
         "params": {},
     }
@@ -197,11 +195,10 @@ def _hardware_id_mock_fixture() -> Generator:
         yield
 
 
-# setting the fixture name to requests_mock allows other
-# tests to pull in request_mock and append uris
-@pytest.fixture(autouse=True, name="aioresponses_mock")
-def aioresponses_mock_fixture(request, devices_fixture, putpatch_status_fixture):
-    with aioresponses() as mock:
+# setting the fixture name allows other tests to pull in the mock and append uris
+@pytest.fixture(autouse=True, name="aiointercept_mock")
+async def aiointercept_mock_fixture(request, devices_fixture, putpatch_status_fixture):
+    async with aiointercept(mock_external_urls=True) as mock:
         mock.post(
             "https://oauth.ring.com/oauth/token",
             payload=load_fixture_as_dict("ring_oauth.json"),

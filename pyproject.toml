@@ -5,12 +5,12 @@ description = "A Python library to communicate with Ring Door Bell (https://ring
 authors = [{ name = "python-ring-doorbell developers" }]
 license = { text="LGPL-3.0-or-later" }
 readme = "README.rst"
-requires-python = ">=3.9.0"
+requires-python = ">=3.10.0"
 dependencies = [
     "oauthlib>=3.0.0,<4",
     "pytz>=2022.0",
     "asyncclick>=8.1.7.1",
-    "aiohttp>=3",
+    "aiohttp>=3.14",
     "aiofiles>=23",
     "typing-extensions>=4.12.2,<5.0",
     "async-timeout>=3.0.0",
@@ -30,7 +30,6 @@ classifiers = [
     "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -75,7 +74,7 @@ dev-dependencies = [
     "types-pytz>=2022.0",
     "pytest-freezer~=0.4",
     "types-oauthlib>=3.0.0,<4",
-    "aioresponses~=0.7",
+    "aiointercept>=0.1.9",
     "types-aiofiles>=23",
     "mypy~=1.0"
 ]
@@ -87,7 +86,8 @@ testpaths = [
 norecursedirs = ".git"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "--disable-socket --allow-unix-socket"
+# aiointercept serves the mocked responses from a real server on localhost.
+addopts = "--disable-socket --allow-unix-socket --allow-hosts=127.0.0.1,::1"
 filterwarnings = [
     "ignore:.*google._upb._message.MessageMapContainer uses PyType_Spec.*:DeprecationWarning",
     "ignore:.*google._upb._message.ScalarMapContainer uses PyType_Spec.*:DeprecationWarning",
