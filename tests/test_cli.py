@@ -28,7 +28,6 @@ from ring_doorbell.const import GCM_TOKEN_FILE
 from tests.conftest import (
     load_alert_v1,
     load_fixture,
-    load_fixture_as_dict,
 )
 
 
@@ -168,7 +167,7 @@ async def test_auth(mocker, affect_method, exception, file_exists):
         assert res.exit_code == 0
 
 
-async def test_motion_detection(ring, aioresponses_mock, devices_fixture):
+async def test_motion_detection(ring, aiointercept_mock, devices_fixture):
     runner = CliRunner()
     with runner.isolated_filesystem():
         res = await runner.invoke(
@@ -189,12 +188,10 @@ async def test_motion_detection(ring, aioresponses_mock, devices_fixture):
         assert res.exit_code == 0
         assert expected in res.output
 
-        # Changes the return to indicate that the siren is now on.
+        # Changes the return to indicate that the siren is now on; the
+        # devices handler is registered with repeat=True and serves the
+        # updated fixture from here on.
         devices_fixture.updated = True
-        aioresponses_mock.get(
-            "https://api.ring.com/clients_api/ring_devices",
-            payload=load_fixture_as_dict("ring_devices_updated.json"),
-        )
 
         res = await runner.invoke(
             motion_detection,
@@ -269,7 +266,7 @@ async def test_listen_event_handler(mocker, auth):
     echomock.assert_called_with(exp)
 
 
-async def test_in_home_chime(ring, aioresponses_mock, devices_fixture):
+async def test_in_home_chime(ring, aiointercept_mock, devices_fixture):
     runner = CliRunner()
     with runner.isolated_filesystem():
         # Gets in-home chime details for a doorbell
@@ -345,7 +342,7 @@ async def test_in_home_chime(ring, aioresponses_mock, devices_fixture):
         assert expected in res.output
 
 
-async def test_open_door(ring, aioresponses_mock, devices_fixture):
+async def test_open_door(ring, aiointercept_mock, devices_fixture):
     runner = CliRunner()
 
     res = await runner.invoke(
@@ -357,7 +354,7 @@ async def test_open_door(ring, aioresponses_mock, devices_fixture):
     assert res.output == "Ingress opened\n"
 
 
-async def test_get_device(ring, aioresponses_mock, devices_fixture):
+async def test_get_device(ring, aiointercept_mock, devices_fixture):
     runner = CliRunner()
 
     # Get device by name

@@ -45,7 +45,7 @@ async def test_other_attributes(ring):
     assert dev.wifi_signal_strength != 100
 
 
-async def test_other_controls(ring, aioresponses_mock):
+async def test_other_controls(ring, aiointercept_mock):
     dev = ring.devices()["other"][0]
 
     kwargs = json_request_kwargs()
@@ -53,7 +53,7 @@ async def test_other_controls(ring, aioresponses_mock):
 
     await dev.async_set_doorbell_volume(6)
     kwargs["params"] = {"doorbot[settings][doorbell_volume]": "6"}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/clients_api/doorbots/185036587", method="PUT", **kwargs
     )
 
@@ -61,7 +61,7 @@ async def test_other_controls(ring, aioresponses_mock):
 
     await dev.async_set_mic_volume(10)
     kwargs["json"] = {"volume_settings": {"mic_volume": 10}}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/devices/v1/devices/185036587/settings",
         method="PATCH",
         **kwargs,
@@ -69,7 +69,7 @@ async def test_other_controls(ring, aioresponses_mock):
 
     await dev.async_set_voice_volume(9)
     kwargs["json"] = {"volume_settings": {"voice_volume": 9}}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/devices/v1/devices/185036587/settings",
         method="PATCH",
         **kwargs,
@@ -77,7 +77,7 @@ async def test_other_controls(ring, aioresponses_mock):
 
     await dev.async_set_clip_length_max(30)
     kwargs["json"] = {"video_settings": {"clip_length_max": 30}}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/devices/v1/devices/185036587/settings",
         method="PATCH",
         **kwargs,
@@ -85,14 +85,14 @@ async def test_other_controls(ring, aioresponses_mock):
 
     await dev.async_set_keep_alive_auto(32.2)
     kwargs["json"] = {"keep_alive_settings": {"keep_alive_auto": 32.2}}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/devices/v1/devices/185036587/settings",
         method="PATCH",
         **kwargs,
     )
 
 
-async def test_other_invitations(ring, aioresponses_mock):
+async def test_other_invitations(ring, aiointercept_mock):
     dev = ring.devices()["other"][0]
     kwargs = json_request_kwargs()
     kwargs["json"] = {
@@ -104,7 +104,7 @@ async def test_other_invitations(ring, aioresponses_mock):
     }
 
     await dev.async_invite_access("test@example.com")
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/clients_api/locations/mock-location-id/invitations",
         method="POST",
         **kwargs,
@@ -113,14 +113,14 @@ async def test_other_invitations(ring, aioresponses_mock):
     await dev.async_remove_access(123456789)
 
     kwargs = nojson_request_kwargs()
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/clients_api/locations/mock-location-id/invitations/123456789",
         method="DELETE",
         **kwargs,
     )
 
 
-async def test_other_open_door(ring, aioresponses_mock, mocker):
+async def test_other_open_door(ring, aiointercept_mock, mocker):
     dev = ring.devices()["other"][0]
 
     mocker.patch("uuid.uuid4", return_value="987654321")
@@ -137,7 +137,7 @@ async def test_other_open_door(ring, aioresponses_mock, mocker):
     }
 
     await dev.async_open_door(15)
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         "https://api.ring.com/commands/v1/devices/185036587/device_rpc",
         method="PUT",
         **kwargs,

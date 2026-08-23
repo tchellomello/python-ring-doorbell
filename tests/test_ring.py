@@ -113,33 +113,33 @@ def test_stickup_cam_attributes(ring):
     assert dev.siren == 0
 
 
-async def test_stickup_cam_controls(ring, aioresponses_mock):
+async def test_stickup_cam_controls(ring, aiointercept_mock):
     dev = ring.devices()["stickup_cams"][0]
 
     kwargs = json_request_kwargs()
     kwargs["json"] = None
 
     await dev.async_set_lights("off")
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652/floodlight_light_off",
         method="PUT",
         **kwargs,
     )
     await dev.async_set_lights("on")
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652/floodlight_light_on",
         method="PUT",
         **kwargs,
     )
     await dev.async_set_siren(0)
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652/siren_off",
         method="PUT",
         **kwargs,
     )
     await dev.async_set_siren(30)
     kwargs["params"] = {"duration": 30}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652/siren_on",
         method="PUT",
         **kwargs,
@@ -178,13 +178,13 @@ async def test_light_groups(ring):
     await group.async_set_lights(state=True, duration=30)
 
 
-async def test_motion_detection_enable(ring, aioresponses_mock):
+async def test_motion_detection_enable(ring, aiointercept_mock):
     dev = ring.devices()["doorbots"][0]
 
     kwargs = json_request_kwargs()
     await dev.async_set_motion_detection(state=True)
     kwargs["json"] = {"motion_settings": {"motion_detection_enabled": True}}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/devices/v1/devices/987652/settings",
         method="PATCH",
         **kwargs,
@@ -193,7 +193,7 @@ async def test_motion_detection_enable(ring, aioresponses_mock):
     await dev.async_set_motion_detection(state=False)
 
     kwargs["json"] = {"motion_settings": {"motion_detection_enabled": False}}
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/devices/v1/devices/987652/settings",
         method="PATCH",
         **kwargs,
@@ -292,7 +292,7 @@ def test_sync_queries_with_no_event_loop():
         auth.close()
 
 
-async def test_set_existing_doorbell_type(ring, aioresponses_mock):
+async def test_set_existing_doorbell_type(ring, aiointercept_mock):
     data = ring.devices()
     dev = data["doorbots"][0]
     assert dev.existing_doorbell_type == "Mechanical"
@@ -300,46 +300,46 @@ async def test_set_existing_doorbell_type(ring, aioresponses_mock):
     kwargs = json_request_kwargs()
     kwargs["json"] = None
 
-    aioresponses_mock.requests.clear()
+    aiointercept_mock.requests.clear()
     # Attempting to turn off the in-home chime
     await dev.async_set_existing_doorbell_type_enabled(value=False)
     kwargs["params"] = {
         "doorbot[description]": dev.name,
         "doorbot[settings][chime_settings][enable]": 0,
     }
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652",
         method="PUT",
         **kwargs,
     )
 
-    aioresponses_mock.requests.clear()
+    aiointercept_mock.requests.clear()
     # Attempting to turn on the in-home chime
     await dev.async_set_existing_doorbell_type_enabled(value=True)
     kwargs["params"] = {
         "doorbot[description]": dev.name,
         "doorbot[settings][chime_settings][enable]": 1,
     }
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652",
         method="PUT",
         **kwargs,
     )
 
-    aioresponses_mock.requests.clear()
+    aiointercept_mock.requests.clear()
     # Attempting to set the doorbell type
     await dev.async_set_existing_doorbell_type(2)
     kwargs["params"] = {
         "doorbot[description]": dev.name,
         "doorbot[settings][chime_settings][type]": 2,
     }
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652",
         method="PUT",
         **kwargs,
     )
 
-    aioresponses_mock.requests.clear()
+    aiointercept_mock.requests.clear()
     # Attempting to set the duration of the in-home chime
     settings = dev._attrs["settings"]["chime_settings"]
     settings["type"] = 1
@@ -349,7 +349,7 @@ async def test_set_existing_doorbell_type(ring, aioresponses_mock):
         "doorbot[description]": dev.name,
         "doorbot[settings][chime_settings][duration]": 5,
     }
-    aioresponses_mock.assert_called_with(
+    aiointercept_mock.assert_called_with(
         url="https://api.ring.com/clients_api/doorbots/987652",
         method="PUT",
         **kwargs,
