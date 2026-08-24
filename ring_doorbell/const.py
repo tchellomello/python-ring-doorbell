@@ -184,7 +184,7 @@ STICKUP_CAM_KINDS = ["stickup_cam", "stickup_cam_v3"]
 STICKUP_CAM_BATTERY_KINDS = ["stickup_cam_lunar"]
 STICKUP_CAM_ELITE_KINDS = ["stickup_cam_elite", "stickup_cam_wired"]
 STICKUP_CAM_WIRED_KINDS = STICKUP_CAM_ELITE_KINDS  # Deprecated
-STICKUP_CAM_GEN3_KINDS = ["cocoa_camera", "cocoa_camera_v2"]
+STICKUP_CAM_GEN3_KINDS = ["cocoa_camera", "cocoa_camera_v2", "cocoa_camera_v3"]
 BEAM_KINDS = ["beams_ct200_transformer"]
 
 INTERCOM_KINDS = ["intercom_handset_audio", "intercom_handset_video"]
