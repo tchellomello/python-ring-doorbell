@@ -12,6 +12,7 @@ from ring_doorbell.const import (
     FLOODLIGHT_CAM_PRO_KINDS,
     INDOOR_CAM_GEN2_KINDS,
     INDOOR_CAM_KINDS,
+    INDOOR_CAM_PLUS_KINDS,
     INDOOR_CAM_PTZ_KINDS,
     LIGHTS_ENDPOINT,
     MSG_ALLOWED_VALUES,
@@ -56,6 +57,8 @@ class RingStickUpCam(RingDoorBell):
             return "Indoor Cam"
         if self.kind in INDOOR_CAM_GEN2_KINDS:
             return "Indoor Cam (2nd Gen)"
+        if self.kind in INDOOR_CAM_PLUS_KINDS:
+            return "Indoor Cam Plus"
         if self.kind in INDOOR_CAM_PTZ_KINDS:
             return "Pan-Tilt Indoor Cam"
         if self.kind in SPOTLIGHT_CAM_BATTERY_KINDS:
@@ -115,6 +118,7 @@ class RingStickUpCam(RingDoorBell):
                 + INDOOR_CAM_KINDS
                 + INDOOR_CAM_GEN2_KINDS
                 + INDOOR_CAM_PTZ_KINDS
+                + INDOOR_CAM_PLUS_KINDS
                 + SPOTLIGHT_CAM_BATTERY_KINDS
                 + SPOTLIGHT_CAM_WIRED_KINDS
                 + SPOTLIGHT_CAM_PLUS_KINDS
@@ -131,6 +135,7 @@ class RingStickUpCam(RingDoorBell):
                 + INDOOR_CAM_KINDS
                 + INDOOR_CAM_GEN2_KINDS
                 + INDOOR_CAM_PTZ_KINDS
+                + INDOOR_CAM_PLUS_KINDS
                 + SPOTLIGHT_CAM_BATTERY_KINDS
                 + SPOTLIGHT_CAM_WIRED_KINDS
                 + SPOTLIGHT_CAM_PLUS_KINDS
