@@ -7,6 +7,7 @@ import logging
 from typing import Any, ClassVar
 
 from ring_doorbell.const import (
+    CHIME_2ND_GEN_KINDS,
     CHIME_KINDS,
     CHIME_PRO_KINDS,
     CHIME_TEST_SOUND_KINDS,
@@ -48,6 +49,8 @@ class RingChime(RingGeneric):
             return "Chime"
         if self.kind in CHIME_PRO_KINDS:
             return "Chime Pro"
+        if self.kind in CHIME_2ND_GEN_KINDS:
+            return "Chime (2nd Gen)"
         return "Unknown Chime"
 
     def has_capability(self, capability: RingCapability | str) -> bool:

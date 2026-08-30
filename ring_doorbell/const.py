@@ -156,6 +156,7 @@ DOORBELL_EXISTING_DURATION_MAX = 10
 # device model kinds
 CHIME_KINDS = ["chime", "chime_v2"]
 CHIME_PRO_KINDS = ["chime_pro", "chime_pro_v2"]
+CHIME_2ND_GEN_KINDS = ["chime_v4"]
 
 DOORBELL_KINDS = ["doorbot", "doorbell", "doorbell_v3"]
 DOORBELL_2_KINDS = ["doorbell_v4", "doorbell_v5"]
@@ -164,6 +165,8 @@ DOORBELL_4_KINDS = ["doorbell_oyster"]  # Added
 DOORBELL_3_PLUS_KINDS = ["doorbell_scallop"]
 DOORBELL_PRO_KINDS = ["lpd_v1", "lpd_v2", "lpd_v3"]
 DOORBELL_PRO_2_KINDS = ["lpd_v4"]
+DOORBELL_PRO_4K_WIRED_KINDS = ["cocoa_doorbell_v5"]
+DOORBELL_PRO_4K_BATTERY_KINDS = ["cocoa_doorbell_v6"]
 DOORBELL_ELITE_KINDS = ["jbox_v1"]
 DOORBELL_WIRED_KINDS = ["doorbell_graham_cracker"]
 DOORBELL_BATTERY_KINDS = ["df_doorbell_clownfish"]
@@ -180,11 +183,14 @@ SPOTLIGHT_CAM_BATTERY_KINDS = ["stickup_cam_v4"]
 SPOTLIGHT_CAM_WIRED_KINDS = ["hp_cam_v2", "spotlightw_v2"]
 SPOTLIGHT_CAM_PLUS_KINDS = ["cocoa_spotlight"]
 SPOTLIGHT_CAM_PRO_KINDS = ["stickup_cam_longfin"]
+SPOTLIGHT_CAM_4K_PRO_KINDS = ["cocoa_spotlight_v2"]
 STICKUP_CAM_KINDS = ["stickup_cam", "stickup_cam_v3"]
 STICKUP_CAM_BATTERY_KINDS = ["stickup_cam_lunar"]
 STICKUP_CAM_ELITE_KINDS = ["stickup_cam_elite", "stickup_cam_wired"]
 STICKUP_CAM_WIRED_KINDS = STICKUP_CAM_ELITE_KINDS  # Deprecated
 STICKUP_CAM_GEN3_KINDS = ["cocoa_camera"]
+ELITE_CAM_140_KINDS = ["hexa_camera_2_v1"]
+ELITE_CAM_360_KINDS = ["hexa_camera_6_v1"]
 BEAM_KINDS = ["beams_ct200_transformer"]
 
 INTERCOM_KINDS = ["intercom_handset_audio", "intercom_handset_video"]
