@@ -19,9 +19,12 @@ from ring_doorbell.const import (
     SIREN_DURATION_MAX,
     SIREN_DURATION_MIN,
     SIREN_ENDPOINT,
+    ELITE_CAM_140_KINDS,
+    ELITE_CAM_360_KINDS,
     SPOTLIGHT_CAM_BATTERY_KINDS,
     SPOTLIGHT_CAM_PLUS_KINDS,
     SPOTLIGHT_CAM_PRO_KINDS,
+    SPOTLIGHT_CAM_4K_PRO_KINDS,
     SPOTLIGHT_CAM_WIRED_KINDS,
     STICKUP_CAM_BATTERY_KINDS,
     STICKUP_CAM_ELITE_KINDS,
@@ -70,6 +73,8 @@ class RingStickUpCam(RingDoorBell):
             return "Spotlight Cam Plus"
         if self.kind in SPOTLIGHT_CAM_PRO_KINDS:
             return "Spotlight Cam Pro"
+        if self.kind in SPOTLIGHT_CAM_4K_PRO_KINDS:
+            return "Spotlight Cam 4K Pro"
         if self.kind in STICKUP_CAM_KINDS:
             return "Stick Up Cam"
         if self.kind in STICKUP_CAM_BATTERY_KINDS:
@@ -78,6 +83,10 @@ class RingStickUpCam(RingDoorBell):
             return "Stick Up Cam Wired"
         if self.kind in STICKUP_CAM_GEN3_KINDS:
             return "Stick Up Cam (3rd Gen)"
+        if self.kind in ELITE_CAM_140_KINDS:
+            return "Elite 140 4K"
+        if self.kind in ELITE_CAM_360_KINDS:
+            return "Elite 360 4K"
         _LOGGER.error("Unknown kind: %s", self.kind)
         return "Unknown Stickup Cam"
 
@@ -106,6 +115,7 @@ class RingStickUpCam(RingDoorBell):
                 + SPOTLIGHT_CAM_WIRED_KINDS
                 + SPOTLIGHT_CAM_PLUS_KINDS
                 + SPOTLIGHT_CAM_PRO_KINDS
+                + SPOTLIGHT_CAM_4K_PRO_KINDS
             )
         if capability == RingCapability.SIREN:
             return self.kind in (
@@ -119,9 +129,12 @@ class RingStickUpCam(RingDoorBell):
                 + SPOTLIGHT_CAM_WIRED_KINDS
                 + SPOTLIGHT_CAM_PLUS_KINDS
                 + SPOTLIGHT_CAM_PRO_KINDS
+                + SPOTLIGHT_CAM_4K_PRO_KINDS
                 + STICKUP_CAM_BATTERY_KINDS
                 + STICKUP_CAM_ELITE_KINDS
                 + STICKUP_CAM_GEN3_KINDS
+                + ELITE_CAM_140_KINDS
+                + ELITE_CAM_360_KINDS
             )
         if capability in [RingCapability.MOTION_DETECTION, RingCapability.VIDEO]:
             return self.kind in (
@@ -135,10 +148,13 @@ class RingStickUpCam(RingDoorBell):
                 + SPOTLIGHT_CAM_WIRED_KINDS
                 + SPOTLIGHT_CAM_PLUS_KINDS
                 + SPOTLIGHT_CAM_PRO_KINDS
+                + SPOTLIGHT_CAM_4K_PRO_KINDS
                 + STICKUP_CAM_KINDS
                 + STICKUP_CAM_BATTERY_KINDS
                 + STICKUP_CAM_ELITE_KINDS
                 + STICKUP_CAM_GEN3_KINDS
+                + ELITE_CAM_140_KINDS
+                + ELITE_CAM_360_KINDS
             )
         return False
 
