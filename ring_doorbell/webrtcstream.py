@@ -388,6 +388,8 @@ class RingWebRtcStream:
             await websocket.close()
         if read_task := self.read_task:
             self.read_task = None
+            if read_task is asyncio.current_task():
+                return
             if not read_task.done():
                 await read_task
 
@@ -413,7 +415,14 @@ class RingWebRtcStream:
             else:
                 _LOGGER.debug("Received notification: %s", message)
         elif method == "session_created":
-            self.session_id = message["body"]["session_id"]
+            body = message.get("body") or {}
+            if not (session_id := body.get("session_id")):
+                _LOGGER.warning(
+                    "Ignoring session_created without session_id (body keys: %s)",
+                    sorted(body),
+                )
+                return
+            self.session_id = session_id
             if TYPE_CHECKING:
                 assert self.session_id
             _LOGGER.debug(

@@ -3,10 +3,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import TYPE_CHECKING, Any, ClassVar
+
+import aiofiles
 
 from ring_doorbell.const import (
     DOORBELLS_ENDPOINT,
@@ -22,12 +26,18 @@ from ring_doorbell.const import (
     OTHER_DOORBELL_VOL_MAX,
     OTHER_DOORBELL_VOL_MIN,
     SETTINGS_ENDPOINT,
+    SNAPSHOT_ENDPOINT,
+    SNAPSHOT_TIMESTAMP_ENDPOINT,
     VOICE_VOL_MAX,
     VOICE_VOL_MIN,
     RingCapability,
 )
 from ring_doorbell.exceptions import RingError
 from ring_doorbell.generic import RingGeneric
+from ring_doorbell.webrtcstream import (
+    RingWebRtcMessageCallback,
+    RingWebRtcStream,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +52,7 @@ class RingOther(RingGeneric):
         """Initialise the other devices."""
         super().__init__(ring, device_api_id)
         self.shared = shared
+        self._webrtc_streams: dict[str, RingWebRtcStream] = {}
 
     @property
     def family(self) -> str:
@@ -75,6 +86,10 @@ class RingOther(RingGeneric):
             RingCapability.DING,
         ]:
             return self.kind in INTERCOM_KINDS
+
+        if capability == RingCapability.VIDEO:
+            return self.kind == "intercom_handset_video"
+
         return False
 
     @property
@@ -105,6 +120,39 @@ class RingOther(RingGeneric):
         if self.kind in INTERCOM_KINDS and (features := self._attrs.get("features")):
             return features.get("show_recordings", False)
         return False
+
+    async def async_get_snapshot(
+        self, retries: int = 3, delay: int = 1, filename: str | None = None
+    ) -> bytes | None:
+        """Take a snapshot and download it."""
+        payload = {"doorbot_ids": [self._attrs.get("id")]}
+        await self._ring.async_query(
+            SNAPSHOT_TIMESTAMP_ENDPOINT, method="POST", json=payload
+        )
+        request_time = time.time()
+        for _ in range(retries):
+            await asyncio.sleep(delay)
+            resp = await self._ring.async_query(
+                SNAPSHOT_TIMESTAMP_ENDPOINT, method="POST", json=payload
+            )
+            response = resp.json()
+            timestamps = response.get("timestamps") or []
+            if not timestamps:
+                continue
+
+            timestamp = timestamps[0].get("timestamp")
+            if timestamp is not None and timestamp / 1000 > request_time:
+                resp = await self._ring.async_query(
+                    SNAPSHOT_ENDPOINT.format(self._attrs.get("id"))
+                )
+                snapshot = resp.content
+                if filename:
+                    async with aiofiles.open(filename, "wb") as jpg:
+                        await jpg.write(snapshot)
+                    return None
+                return snapshot
+
+        return None
 
     @property
     def unlock_duration(self) -> str | None:
@@ -270,6 +318,51 @@ class RingOther(RingGeneric):
             return True
 
         return False
+
+    async def generate_async_webrtc_stream(
+        self,
+        sdp_offer: str,
+        session_id: str,
+        on_message_callback: RingWebRtcMessageCallback,
+        *,
+        keep_alive_timeout: int | None = 60 * 5,
+    ) -> None:
+        """Generate the rtc stream."""
+
+        async def _close_callback() -> None:
+            await self.close_webrtc_stream(session_id)
+
+        stream = RingWebRtcStream(
+            self._ring,
+            self.device_api_id,
+            on_message_callback=on_message_callback,
+            keep_alive_timeout=keep_alive_timeout,
+            on_close_callback=_close_callback,
+        )
+        self._webrtc_streams[session_id] = stream
+        await stream.generate(sdp_offer)
+
+    async def on_webrtc_candidate(
+        self, session_id: str, candidate: str, multi_line_index: int
+    ) -> None:
+        """Send an ICE candidate."""
+        if stream := self._webrtc_streams.get(session_id):
+            await stream.on_ice_candidate(candidate, multi_line_index)
+        else:
+            msg = "Ice candidate received before stream has been created."
+            raise RingError(msg)
+
+    async def close_webrtc_stream(self, session_id: str) -> None:
+        """Close the rtc stream."""
+        stream = self._webrtc_streams.pop(session_id, None)
+        if stream:
+            await stream.close()
+
+    def sync_close_webrtc_stream(self, session_id: str) -> None:
+        """Close the rtc stream."""
+        stream = self._webrtc_streams.pop(session_id, None)
+        if stream:
+            stream.sync_close()
 
     DEPRECATED_API_QUERIES: ClassVar = {
         *RingGeneric.DEPRECATED_API_QUERIES,
