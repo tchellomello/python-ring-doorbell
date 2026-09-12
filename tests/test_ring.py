@@ -1,15 +1,18 @@
 """The tests for the Ring platform."""
 
 import asyncio
+import re
+import time
 from datetime import datetime, timezone
 
 import pytest
+from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
 from ring_doorbell import Auth, Ring, RingError
 from ring_doorbell.const import MSG_EXISTING_TYPE, USER_AGENT
 from ring_doorbell.util import parse_datetime
 
-from .conftest import json_request_kwargs, load_fixture_as_dict
+from .conftest import json_request_kwargs, load_fixture_as_dict, nojson_request_kwargs
 
 
 def test_basic_attributes(ring):
@@ -144,6 +147,74 @@ async def test_stickup_cam_controls(ring, aioresponses_mock):
         method="PUT",
         **kwargs,
     )
+
+
+async def test_doorbot_snapshot(ring, aioresponses_mock):
+    dev = ring.devices()["doorbots"][0]
+    kwargs = nojson_request_kwargs()
+
+    freezer = freeze_time("2026-01-01 00:00:01")
+    freezer.start()
+    pattern = re.compile(r"^https://app-snaps.ring.com.*$")
+    aioresponses_mock.get(
+        pattern,
+        content_type="image/jpeg",
+    )
+
+    # defaults - max_age:30, max_wait:10
+    params = {
+        "after-ms": (int(time.time()) - 30) * 1000,
+        "max-wait-ms": 10_000,
+        "extras": "force",
+    }
+    kwargs["params"] = params
+    kwargs["timeout"] = 11
+
+    snapshot = await dev.async_take_snapshot()
+    aioresponses_mock.assert_called_with(
+        url="https://app-snaps.ring.com/snapshots/next/987652",
+        method="GET",
+        **kwargs,
+    )
+    assert isinstance(snapshot, bytes)
+
+    # custom values - max_age:0, max_wait:1
+    aioresponses_mock.get(
+        pattern,
+        content_type="image/jpeg",
+    )
+
+    params = {
+        "after-ms": (int(time.time())) * 1000,
+        "max-wait-ms": 1_000,
+        "extras": "force",
+    }
+    kwargs["params"] = params
+    kwargs["timeout"] = 2
+
+    snapshot = await dev.async_take_snapshot(max_age=0, max_wait=1)
+    aioresponses_mock.assert_called_with(
+        url="https://app-snaps.ring.com/snapshots/next/987652",
+        method="GET",
+        **kwargs,
+    )
+    assert isinstance(snapshot, bytes)
+
+    # simulate failure, should throw
+    aioresponses_mock.get(
+        pattern,
+        status=404,
+    )
+    with pytest.raises(RingError):
+        snapshot = await dev.async_take_snapshot(max_age=0, max_wait=1)
+
+    aioresponses_mock.assert_called_with(
+        url="https://app-snaps.ring.com/snapshots/next/987652",
+        method="GET",
+        **kwargs,
+    )
+
+    freezer.stop()
 
 
 async def test_light_groups(ring):

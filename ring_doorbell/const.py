@@ -66,6 +66,7 @@ DEFAULT_VIDEO_DOWNLOAD_TIMEOUT = 120
 # API endpoints
 API_VERSION = "11"
 API_URI = "https://api.ring.com"
+API_URI_SNAPSHOT = "https://app-snaps.ring.com"
 APP_API_URI = "https://prd-api-us.prd.rings.solutions"
 USER_AGENT = "android:com.ringapp"
 
@@ -101,6 +102,7 @@ RINGTONES_ENDPOINT = "/ringtones"
 SIREN_ENDPOINT = DOORBELLS_ENDPOINT + "/siren_{1}"
 SNAPSHOT_ENDPOINT = "/clients_api/snapshots/image/{0}"
 SNAPSHOT_TIMESTAMP_ENDPOINT = "/clients_api/snapshots/timestamps"
+TAKE_SNAPSHOT_ENDPOINT = "/snapshots/next/{0}"
 TESTSOUND_CHIME_ENDPOINT = CHIMES_ENDPOINT + "/play_sound"
 URL_DOORBELL_HISTORY = DOORBELLS_ENDPOINT + "/history"
 URL_RECORDING = "/clients_api/dings/{0}/recording"

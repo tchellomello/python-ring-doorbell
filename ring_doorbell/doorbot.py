@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import aiofiles
+from typing_extensions import deprecated
 
 from ring_doorbell.const import (
+    API_URI_SNAPSHOT,
     DEFAULT_VIDEO_DOWNLOAD_TIMEOUT,
     DINGS_ENDPOINT,
     DOORBELL_2_KINDS,
@@ -44,6 +46,7 @@ from ring_doorbell.const import (
     SETTINGS_ENDPOINT,
     SNAPSHOT_ENDPOINT,
     SNAPSHOT_TIMESTAMP_ENDPOINT,
+    TAKE_SNAPSHOT_ENDPOINT,
     URL_RECORDING,
     URL_RECORDING_SHARE_PLAY,
     RingCapability,
@@ -399,6 +402,7 @@ class RingDoorBell(RingGeneric):
             return alerts.get("connection")
         return None
 
+    @deprecated("Use async_take_snapshot() instead")
     async def async_get_snapshot(
         self, retries: int = 3, delay: int = 1, filename: str | None = None
     ) -> bytes | None:
@@ -422,6 +426,40 @@ class RingDoorBell(RingGeneric):
                     return None
                 return snapshot
         return None
+
+    async def async_take_snapshot(
+        self, max_age: int = 30, max_wait: int = 10, filename: str | None = None
+    ) -> bytes | None:
+        """
+        Take a snapshot and download it.
+
+        If a snapshot already exists which is less that max_age seconds old, it will
+        be returned immediately. Otherwise, we'll wait at most max_wait seconds for
+        a fresh one before giving up. A 404 response from this method typically
+        indicates a server-side timeout (try increasing max_wait).
+        """
+        request_time_s = time.time()
+        oldest_ms = int(request_time_s - max_age) * 1000
+
+        params = {
+            "after-ms": oldest_ms,
+            "max-wait-ms": max_wait * 1000,
+            "extras": "force",
+        }
+
+        resp = await self._ring.async_query(
+            TAKE_SNAPSHOT_ENDPOINT.format(self._attrs.get("id")),
+            extra_params=params,
+            base_uri=API_URI_SNAPSHOT,
+            timeout=max_wait + 1,
+        )
+
+        snapshot = resp.content
+        if filename:
+            async with aiofiles.open(filename, "wb") as jpg:
+                await jpg.write(snapshot)
+            return None
+        return snapshot
 
     def _motion_detection_state(self) -> bool | None:
         if settings := self._attrs.get("settings"):
