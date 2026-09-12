@@ -1,5 +1,6 @@
 """The tests for the Ring platform."""
 
+import asyncio
 import datetime
 import json
 
@@ -36,6 +37,102 @@ async def test_listen(auth, mocker):
     cbid = listener.add_notification_callback(lambda: 2)
     del listener._callbacks[1]
     listener.remove_notification_callback(cbid)
+
+
+async def test_listen_waits_until_receiver_is_logged_in(auth):
+    import firebase_messaging
+
+    receiver_started = firebase_messaging.FcmPushClient.is_started
+    receiver_started.return_value = False
+
+    async def mark_receiver_started() -> None:
+        await asyncio.sleep(0)
+        receiver_started.return_value = True
+
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+    ready_task = asyncio.create_task(mark_receiver_started())
+
+    assert await listener.start(timeout=1) is True
+    await ready_task
+    assert listener.started is True
+    await listener.stop()
+
+
+async def test_started_tracks_receiver_health(auth):
+    import firebase_messaging
+
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+    await listener.start()
+    assert listener.started is True
+
+    firebase_messaging.FcmPushClient.is_started.return_value = False
+
+    assert listener.started is False
+    await listener.stop()
+    firebase_messaging.FcmPushClient.stop.assert_awaited_once()
+
+
+async def test_concurrent_starts_share_one_receiver(auth):
+    import firebase_messaging
+
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+
+    assert await asyncio.gather(listener.start(), listener.start()) == [True, True]
+    firebase_messaging.FcmPushClient.checkin_or_register.assert_awaited_once()
+    firebase_messaging.FcmPushClient.start.assert_awaited_once()
+    await listener.stop()
+
+
+async def test_listen_timeout_cleans_up_partial_receiver(auth):
+    import firebase_messaging
+
+    firebase_messaging.FcmPushClient.is_started.return_value = False
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+
+    with pytest.raises(TimeoutError):
+        await listener.start(timeout=0)
+
+    assert listener.started is False
+    assert listener.subscribed is False
+    assert listener._receiver is None
+    firebase_messaging.FcmPushClient.stop.assert_awaited_once()
+
+
+async def test_checkin_error_is_not_masked_by_pre_start_cleanup(auth):
+    import firebase_messaging
+
+    firebase_messaging.FcmPushClient.checkin_or_register.side_effect = ValueError(
+        "registration failed"
+    )
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+
+    with pytest.raises(ValueError, match="registration failed"):
+        await listener.start()
+
+    assert listener.started is False
+    assert listener._receiver is None
+    firebase_messaging.FcmPushClient.stop.assert_not_awaited()
+
+
+async def test_callback_added_before_start_is_removable(auth):
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+    callback_id = listener.add_notification_callback(lambda _: None)
+
+    await listener.start()
+
+    listener.remove_notification_callback(callback_id)
+    with pytest.raises(
+        RingError,
+        match="Cannot remove the default callback for ring-doorbell with value 2",
+    ):
+        listener.remove_notification_callback(2)
+    await listener.stop()
 
 
 async def test_active_dings(auth, mocker):
