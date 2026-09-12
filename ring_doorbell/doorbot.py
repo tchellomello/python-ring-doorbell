@@ -8,9 +8,9 @@ import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
-from warnings import deprecated
 
 import aiofiles
+from typing_extensions import deprecated
 
 from ring_doorbell.const import (
     API_URI_SNAPSHOT,
