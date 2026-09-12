@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import time
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Callable
 
 from async_timeout import timeout as asyncio_timeout
@@ -64,13 +65,16 @@ class RingEventListener:
 
         self._callbacks: dict[int, OnNotificationCallable] = {}
         self.subscribed = False
-        self.started = False
+        self._started = False
         self._device_model = self._ring.auth.get_device_model()
 
         self._credentials = credentials
         self._credentials_updated_callback = credentials_updated_callback
 
         self._receiver: FcmPushClient | None = None
+        self._receiver_start_called = False
+        self._lifecycle_lock = asyncio.Lock()
+        self._default_callback_id: int | None = None
         self._config: RingEventListenerConfig = (
             config or RingEventListenerConfig.default_config()
         )
@@ -82,6 +86,11 @@ class RingEventListener:
         self.fcm_token: str | None = None
 
         self._seen_events: set[RingEventKey] = set()
+
+    @property
+    def started(self) -> bool:
+        """Return whether the push receiver is logged in and listening."""
+        return bool(self._started and self._receiver and self._receiver.is_started())
 
     def _credentials_updated_cb(self, creds: dict[str, Any]) -> None:
         self._credentials = creds
@@ -137,8 +146,11 @@ class RingEventListener:
 
     def remove_notification_callback(self, subscription_id: int) -> None:
         """Remove a notification callback by id."""
-        if subscription_id == 1:
-            msg = "Cannot remove the default callback for ring-doorbell with value 1"
+        if subscription_id == self._default_callback_id:
+            msg = (
+                "Cannot remove the default callback for ring-doorbell with value "
+                f"{subscription_id}"
+            )
             raise RingError(msg)
 
         if subscription_id not in self._callbacks:
@@ -149,17 +161,38 @@ class RingEventListener:
 
     async def stop(self) -> None:
         """Stop the listener."""
-        self.started = False
+        async with self._lifecycle_lock:
+            await self._stop_locked(clear_callbacks=True)
 
-        if self._receiver:
-            await self._receiver.stop()
+    async def _stop_locked(self, *, clear_callbacks: bool) -> None:
+        """Stop the listener while holding the lifecycle lock."""
+        self._started = False
+        receiver = self._receiver
+        self._receiver = None
 
-        refresh_task = self.session_refresh_task
-        self.session_refresh_task = None
-        if refresh_task and not refresh_task.done():
-            refresh_task.cancel()
+        try:
+            if receiver and self._receiver_start_called:
+                await receiver.stop()
+        finally:
+            self._receiver_start_called = False
 
-        self._callbacks = {}
+            refresh_task = self.session_refresh_task
+            self.session_refresh_task = None
+            if refresh_task and not refresh_task.done():
+                refresh_task.cancel()
+                if refresh_task is not asyncio.current_task():
+                    with suppress(asyncio.CancelledError):
+                        await refresh_task
+
+            if self._default_callback_id is not None:
+                self._callbacks.pop(self._default_callback_id, None)
+                self._default_callback_id = None
+            if clear_callbacks:
+                self._callbacks = {}
+                self._subscription_counter = 1
+
+            self.subscribed = False
+            self.fcm_token = None
 
     async def start(
         self,
@@ -167,42 +200,84 @@ class RingEventListener:
         timeout: int = 10,
     ) -> bool:
         """Start the listener."""
+        async with self._lifecycle_lock:
+            return await self._start_locked(timeout)
+
+    async def _start_locked(self, timeout: int) -> bool:
+        """Start the listener while holding the lifecycle lock."""
         _logger.debug("Starting event listener")
-        if not self._receiver:
-            fcm_config = FcmRegisterConfig(
-                FCM_PROJECT_ID, FCM_APP_ID, FCM_API_KEY, FCM_RING_SENDER_ID
-            )
-            self._receiver = FcmPushClient(
-                self._on_notification,
-                fcm_config,
-                self._credentials,
-                self._credentials_updated_cb,
-                config=self._config,
-                http_client_session=self._ring.auth._session,  # noqa: SLF001
-            )
-        self.fcm_token = await self._receiver.checkin_or_register()
-        if not self.fcm_token:
-            _logger.error(
-                "Ring listener unable to check in to fcm, " "event listener not started"
-            )
+        if self.started:
+            return True
+
+        if self._receiver:
+            await self._stop_locked(clear_callbacks=False)
+
+        receiver = self._create_receiver()
+        if not await self._checkin_and_subscribe(receiver):
             return False
 
-        if not self.subscribed:
-            await self.add_subscription_to_ring(self.fcm_token)
-        if self.subscribed:
-            self.add_notification_callback(self._ring._add_event_to_dings_data)  # noqa: SLF001
-
+        try:
             async with asyncio_timeout(timeout):
-                await self._receiver.start()
-            self.started = True
-            self.session_refresh_task = asyncio.create_task(
-                self._periodic_session_refresh()
-            )
-            _logger.debug("Started event listener")
+                self._receiver_start_called = True
+                await receiver.start()
+                while not receiver.is_started():  # noqa: ASYNC110
+                    await asyncio.sleep(0.05)
+        except BaseException:
+            await self._stop_locked(clear_callbacks=False)
+            raise
+
+        self._default_callback_id = self.add_notification_callback(
+            self._ring._add_event_to_dings_data  # noqa: SLF001
+        )
+        self._started = True
+        self.session_refresh_task = asyncio.create_task(
+            self._periodic_session_refresh()
+        )
+        _logger.debug("Started event listener")
         return self.started
 
+    def _create_receiver(self) -> FcmPushClient:
+        """Create the FCM receiver for this listener."""
+        fcm_config = FcmRegisterConfig(
+            FCM_PROJECT_ID, FCM_APP_ID, FCM_API_KEY, FCM_RING_SENDER_ID
+        )
+        self._receiver = FcmPushClient(
+            self._on_notification,
+            fcm_config,
+            self._credentials,
+            self._credentials_updated_cb,
+            config=self._config,
+            http_client_session=self._ring.auth._session,  # noqa: SLF001
+        )
+        return self._receiver
+
+    async def _checkin_and_subscribe(self, receiver: FcmPushClient) -> bool:
+        """Register the FCM client and subscribe its token with Ring."""
+        try:
+            self.fcm_token = await receiver.checkin_or_register()
+        except BaseException:
+            await self._stop_locked(clear_callbacks=False)
+            raise
+        if not self.fcm_token:
+            _logger.error(
+                "Ring listener unable to check in to fcm, event listener not started"
+            )
+            await self._stop_locked(clear_callbacks=False)
+            return False
+
+        try:
+            if not self.subscribed:
+                await self.add_subscription_to_ring(self.fcm_token)
+        except BaseException:
+            await self._stop_locked(clear_callbacks=False)
+            raise
+        if not self.subscribed:
+            await self._stop_locked(clear_callbacks=False)
+            return False
+        return True
+
     async def _periodic_session_refresh(self) -> None:
-        while self.started:
+        while self._started:
             now = time.monotonic()
             if TYPE_CHECKING:
                 assert self._ring.session_refresh_time
