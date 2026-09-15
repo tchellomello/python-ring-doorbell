@@ -320,18 +320,27 @@ class RingEventListener:
         event_kind = PUSH_NOTIFICATION_KINDS.get(event_category, "Unknown")
         device = data["device"]
         event = data["event"]
-        event_id = int(event["ding"]["id"])
-        created_at = event["ding"]["created_at"]
+        ding = event["ding"]
+        event_id = ding.get("id")
+        if event_id is None:
+            event_id = event.get("eventito", {}).get("timestamp")
+        if event_id is None:
+            _logger.debug(
+                "Unexpected Ring event without an id. Full message is:\n%s",
+                json.dumps(msg_data),
+            )
+            return None
+        created_at = ding["created_at"]
         create_seconds = parse_datetime(created_at).timestamp()
         return RingEvent(
-            event_id,
+            int(event_id),
             device["id"],
             device_name=device.get("name"),
             device_kind=device.get("kind"),
             kind=event_kind,
             now=create_seconds,
             expires_in=DEFAULT_LISTEN_EVENT_EXPIRES_IN,
-            state=event["ding"]["subtype"],
+            state=ding["subtype"],
         )
 
     def _get_legacy_ring_event(self, gcm_data: dict) -> RingEvent | None:

@@ -74,6 +74,51 @@ async def test_active_dings(auth, mocker):
     await listener.stop()
 
 
+async def test_modern_event_uses_eventito_timestamp_when_ding_id_missing(
+    auth, mocker
+):
+    """Test a modern event without a ding ID uses its eventito timestamp."""
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+    await listener.start()
+    callback = mocker.Mock()
+    listener.add_notification_callback(callback)
+    msg = load_alert_v2("camera_motion", 123456782)
+    data = json.loads(msg["data"]["data"])
+    data["event"]["ding"].pop("id")
+    data["event"]["eventito"] = {"timestamp": 1772800029955, "type": "human"}
+    msg["data"]["data"] = json.dumps(data)
+
+    listener._on_notification(msg, "1234567")
+
+    event = callback.call_args.args[0]
+    assert event.id == 1772800029955
+    assert event.doorbot_id == 123456782
+    assert event.kind == "motion"
+
+    listener._on_notification(msg, "1234568")
+
+    assert callback.call_count == 2
+    assert callback.call_args.args[0].is_update is True
+
+
+async def test_modern_event_without_identifier_is_ignored(auth, mocker):
+    """Test a modern event without any stable identifier is ignored."""
+    ring = Ring(auth)
+    listener = RingEventListener(ring)
+    await listener.start()
+    callback = mocker.Mock()
+    listener.add_notification_callback(callback)
+    msg = load_alert_v2("camera_motion", 123456782)
+    data = json.loads(msg["data"]["data"])
+    data["event"]["ding"].pop("id")
+    msg["data"]["data"] = json.dumps(data)
+
+    listener._on_notification(msg, "1234567")
+
+    callback.assert_not_called()
+
+
 async def test_ding_expirey(auth, mocker, freezer: FrozenDateTimeFactory):
     ring = Ring(auth)
     listener = RingEventListener(ring)
